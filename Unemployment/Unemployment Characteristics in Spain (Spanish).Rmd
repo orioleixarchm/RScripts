@@ -1,0 +1,495 @@
+---
+title: "Proyecto Final: Determinantes del desempleo en España."
+author: "Oriol Eixarch"
+date: "27/5/2021"
+output:
+  html_document:
+    highlight: default
+    number_sections: yes
+    theme: cosmo
+    toc: yes
+    toc_depth: 2
+  word_document: 
+    highlight: default
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+runtime: shiny
+toc-title: "ÍNDICE"
+---
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+install.packages("rmarkdown")
+install.packages("kintr")
+install.packages("shiny")
+library(knitr)
+library("pROC")
+```
+
+# Motivación y objetivos
+
+Uno de los pilares de las sociedades y economías desarrolladas en el siglo XXI es sin duda la maximización de la tasa de empleo, o la minimización de la tasa de paro. Sin duda para tomar decisiones de manera correcta, se debe conocer los factores que favorecen el empleo y las características que favorecen el desempleo.
+
+El objetivo de este proyecto es dilucidar los factores que facilitan la obtención de un empleo en España es decir, cuáles son las características que facilitan la obtención de un trabajo en España, y aseverar si la pandemia del COVID-19 ha variado esos determinantes y características. 
+Este, es un proyecto que pretende usar la metodología y los conocimientos obtenidos en el curso DASS para dar respuesta a una cuestión que consideramos interesante y relevante. Dado el campo de estudio de los autores del proyecto, éste tiene un marcado carácter económico.
+
+Nuestra fuente de datos principal será la Encuesta de Población Activa, elaborada por el Instituto Nacional de Estadística. La encuesta, publicada trimestralmente, está compuesta por 93 variables que hacen referencia a aspectos demográficos y socioeconómicos. En este proyecto analizaremos los datos del primer trimestre de 2020 (plena pandemia). 
+
+# Datos
+
+## Descripción de la base de datos original.
+  
+Procedemos a cargar la base de datos, así como las librerías usadas.
+
+```{r importacion_datos }
+library("pROC")
+library("knitr")
+
+#Oriol
+datos <- read.csv("C:/DASS/EPA_2020T1.csv",
+                 sep="")
+```
+
+La **Encuesta de Población Activa** se realiza sobre una muestra de 65.000 familias al trimestre o, lo que es lo mismo, unas 200.000 personas. En ella se encuentran 93 variables de carácter socioeconómico y  demográfico. La encuesta tiene una estructura fija, es decir, el número de encuestados, así como las variables son las mismas para todos los periodos. Se trata de una base de datos transversal. Es una fuente de datos fácilmente accesible al público. Trabajaremos con las encuestas del primer trimestre de 2020, que consta de `r  nrow(datos)` registros.
+
+## Pre-proceso de los datos.
+
+La base de datos de la que vamos a extraer la información con la que construir nuestros modelos cuenta con 93 variables y con `r  nrow(datos)` registros. Inicialmente Seleccionamos solamente 30 variables potenciales.
+
+```{r variables}
+var <- c("CCAA", "EDAD5", "SEXO1", "NAC1", "NFORMA","TRAREM", "RZNOTB", "NUEVEM", "OCUP1","ACT1","DUCON1","TCONTM", "TCONTD", "PARCO1", "PARCO2", "TRAPLU","MASHOR", "HORDES", "BUSOTR", "BUSCA", "DESEA","FOBACT", "NBUSCA", "ASALA", "EMBUS", "ITBU","DISP", "RZNDIS", "OFEMP", "TRAANT")
+
+datos0 <- datos[,var]
+```
+
+De este subgrupo, consideramos que 7 capturaban aspectos importantes.
+Dada la gran cantidad de valores *missing* en las bases de datos, tanto antes como después de la selección de variables (+65% de los registros), la eliminación era totalmente inviable.
+
+```{r omitiendo_missings, include=FALSE}
+(datos999 <- na.omit(datos0))
+```
+
+Los distintos procedimientos de imputación tampoco sirvieron; la imputación simple no se ajustaba a los datos ya que estos eran cualitativos; la imputación por el método *mice* fue poco fructífera incluso reduciendo al máximo la muestra sobre la que estimar. Sin más opción, decidimos dar valores extremos a los *missings*, concretamente el valor 999, que no serían tomados en consideración en los modelos.
+
+```{r omitiendo_missings1, include=FALSE}
+datos0[is.na(datos0)] <- 999
+datos0$NFORMA[datos0$NFORMA == "  "] <- 999
+```
+
+Seguidamente, modificamos los valores de las variables para obtener registros dicotómicos estandarizados en las variables dicotómicas 0,1 y, en otros casos como en las politómicas 0,1,2,3,...n.
+
+```{r cambio_variables}
+datos0$DUCON1[datos0$DUCON1 == "6"] <- 0
+datos0$CCAA[datos0$CCAA == "51"] <- 18
+datos0$CCAA[datos0$CCAA == "52"] <- 19
+datos0$SEXO1[datos0$SEXO1 == "6"] <- 0
+datos0$NFORMA[datos0$NFORMA == "AN"] <- 0
+datos0$NFORMA[datos0$NFORMA == "P1"] <- 1
+datos0$NFORMA[datos0$NFORMA == "P2"] <- 2
+datos0$NFORMA[datos0$NFORMA == "S1"] <- 3
+datos0$NFORMA[datos0$NFORMA == "SG"] <- 4
+datos0$NFORMA[datos0$NFORMA == "SP"] <- 5
+datos0$NFORMA[datos0$NFORMA == "SU"] <- 6
+datos0$TRAANT[datos0$TRAANT == "6"] <- 0
+datos0$EDAD5[datos0$EDAD5 == "0"] <- 0
+datos0$EDAD5[datos0$EDAD5 == "5"] <- 1
+datos0$EDAD5[datos0$EDAD5 == "10"] <- 2
+datos0$EDAD5[datos0$EDAD5 == "16"] <- 3
+datos0$EDAD5[datos0$EDAD5 == "20"] <- 4
+datos0$EDAD5[datos0$EDAD5 == "25"] <- 5
+datos0$EDAD5[datos0$EDAD5 == "30"] <- 6
+datos0$EDAD5[datos0$EDAD5 == "35"] <- 7
+datos0$EDAD5[datos0$EDAD5 == "40"] <- 8
+datos0$EDAD5[datos0$EDAD5 == "45"] <- 9
+datos0$EDAD5[datos0$EDAD5 == "50"] <- 10
+datos0$EDAD5[datos0$EDAD5 == "55"] <- 11
+datos0$EDAD5[datos0$EDAD5 == "60"] <- 12
+datos0$EDAD5[datos0$EDAD5 == "65"] <- 13
+
+```
+
+La variable **BIN**, de creación propia, toma valores 1 si el valor de la variable **NUEVEM** era 1 si el encuestado ha encontrado empleo, o 2 el encuestado se incorporará en un plazo de 3 meses; y 0 si el valor de la variable **NUEVEM** era 0, no tiene empleo ni está prevista su incorporación al mercado laboral en 3 meses, para valores missings en la variable **NUEVEM** se adjudicaron valores 999 a **BIN**.
+
+```{r variable_BIN}
+datos0$BIN[datos0$NUEVEM==1]<-1
+datos0$BIN[datos0$NUEVEM==2]<-1
+datos0$BIN[datos0$NUEVEM==3]<-0
+datos0$BIN[datos0$NUEVEM==999]<-999
+```
+
+```{r equivalencias, include=FALSE}
+rango<-c(0:19)
+trabajo<-c("Temporal","Indefinido"," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," ")
+comunidades<-c(" ","Andalucía","Aragón","Asturias","Illes Balears","Islas Canarias",
+             "Cantabria","Castilla y León","Castilla-La Mancha","Catalunya",
+             "Comunitat Valenciana","Extremadura","Galicia","Madrid",
+             "Comunidad de	Murcia","Navarra","Pais Vasco","Rioja","Ceuta","Melilla")
+sexo<-c("M","H"," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," ")
+formacion<-c("Analfabeto","Educación primaria incompleta","Educación primaria",
+             "Primera etapa de educación secundaria","Orientación General","Orientación profesional","Educación superior",
+             " "," "," "," "," "," "," "," "," "," "," "," "," ")
+trabajo_previo<-c("NO","SI"," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," "," ")
+nacionalidad<-c("Española","Doble nacionalidad","Extranjera"," "," "," "," "," "," "," "," "," "," "," "," ",
+                " "," "," "," "," ")
+edad<-c("0 a 4 años","5 a 9 años","10 a 15 años","16 a 19 años",
+        "20 a 24 años","25 a 29 años","30 a 34 años","35 a 39 años",
+        "40 a 44 años","45 a 49 años","50 a 54 años","55 a 59 años",
+        "60 a 64 años","65 o más años"," "," "," "," "," "," ")
+empleado<-c("NO","SI"," "," "," "," "," "," "," "," "," "," "," "," ",
+            " "," "," "," "," "," ")
+equivalencias<-data.frame(rango,trabajo,comunidades,sexo,formacion,trabajo_previo,nacionalidad,edad,empleado)
+```
+
+Se han creado dos subsets de datos, el primero *datosL1* en el cual los valores 999 de la variable **DUCON1** que actuaría como variable dependiente en nuestro modelo no se incluyen.
+
+```{r datos_contrato}
+datosL1 <- datos0[datos0$DUCON1 < 100,] #Tipo de contrato: temporal/indefinido
+```
+
+y el segundo *datosK1* en el cual los valores 999 de la variable **BIN** que actuaría como variable dependiente en nuestro modelo no se incluyen.
+
+```{r datos_trabajo}
+datosK1 <- datos0[datos0$BIN < 100,] #Ha encontrado trabajo: No/Si
+```
+
+Se han eliminado los valores extremos *missing* de las variables **NFORMA** y **TRAPLU**.
+
+```{r datos_variables}
+datosM1 <- datos0[as.numeric(datos0$NFORMA) < 100,]
+datosN1 <- datos0[datos0$TRAPLU < 100,]
+```
+
+Se crearon luego los subsets de datos para el entrenamiento del modelo y también para los tests.
+
+```{r training_test}
+###Training y test sets###
+set.seed(1) 
+sample.indexL <- sample(nrow(datosL1), nrow(datosL1)*0.75, replace = FALSE)
+datosL1.train <- datosL1[sample.indexL,] 
+datosL1.test <- datosL1[-sample.indexL,]
+
+set.seed(2) 
+sample.indexK <- sample(nrow(datosK1), nrow(datosK1)*0.75, replace = FALSE)
+datosK1.train <- datosK1[sample.indexK,] 
+datosK1.test <- datosK1[-sample.indexK,]
+```
+
+## Análisis descriptivo de las variables utilizadas.
+
+Como hemos mencionado, la EPA cuenta con 93 variables, nosotros trabajaremos con una selección de 7 variables combinadas con una de creación propia, cuyo objetivo es capturar si se ha encontrado empleo o no, se utilizarán para la construcción de nuestros modelos. Estas variables son:
+
+```{r variable_descripcion, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+n.var <- c("BIN","DUCON1","CCAA","SEXO1","NFORMA","TRAANT","NAC1","EDAD5","TRAPLU")
+kable(data.frame(Variables= n.var, Descripción= c("Variable cualitativa dicotómica de creación propia. Captura si el encuestado tiene o tendrá en 3 meses un empleo. Toma valores 1 si el encuestado trabaja o lo hará en 3 meses, y 0 si no.","Variable cualitativa dicotómica. Captura el tipo de contrato que posee el encuestado. Toma valores 1 si el encuestado tiene un contrato indefinido, y 0 si lo tiene temporal.", "Variable cualitativa politómica. Captura la comunidad autónoma en la que reside el encuestado. Toma valores 1 para Andalucía,2 para Aragón, 3 para Asturias, 4 para Illes Balears, 5 para Islas Canarias, 6 para Cantabria, 7 para Castilla y León, 8 para Castilla-La Mancha, 9 para Catalunya, 10 para Comunitat Valenciana, 11 para Extremadura, 12 para Galicia, 13 para Madrid, 14 para Comunidad de Murcia, 15 para Navarra, 16 para País Vasco, 17 para Rioja, 18 para Ceuta y 19 para Melilla.","Variable cualitativa dicotómica. Captura el sexo del encuestado. Toma valor 1 para hombre y 0 para mujer.","Variable cualitativa politómica. Captura la formación del encuestado. Toma valores 0 para analfabeto, 1 para educación primaria incompleta , 2 para educación primaria completa, 3 para primera etapa de educación secundaria completa , 4 para segunda etapa de educación secundaria completada, 5 para orientación profesional y 6 para educación superior.","Variable cualitativa dicotómica. Captura si el encuestado trabajó el año anterior a la encuesta. Toma valores 1 sí trabajó, y valor 0 si no lo hizo.","Variable cualitativa dicotómica. Captura la nacionalidad del encuestado. Toma valores 1 para ciudadanos españoles, 2 para ciudadanos con doble nacionalidad, y 3 para ciudadanos extranjeros.","Variable cualitativa politómica. Captura el rango de edad al que pertenece el encuestado. Toma valores 0 para el rango de 0 a 4 años , 1 para el rango de 5 a 9 años, 2 para el rango de 10 a 15 años , 3 para el rango de  16 a 19 años, 4 para el rango de 20 a 24 años, 5 para el rango de 25 a 29 años, 6 para el rango de 30 a 34 años, 7 para el rango de 35 a 39 años, 8 para el rango de 40 a 44 años, 9 para el rango de 45 a 49 años , 10 para el rango de 50 a 54 años, 11 para el rango de 55 a 59 años, 12 para el rango de 60 a 64 años y 13 para rango de 65 o más años","Variable cualitativa dicotómica. Captura si el encuestado trabaja o trabajó en la semana en la que se realizó la encuesta. Toma valores 1 si el encuestado trabajó, y 0 si no.")))
+```
+
+Un rápido vistazo a los datos encontramos que de las personas que poseen un empleo en su mayoría tienen un contrato de tipo indefinido, representando estas un **`r round((table(datosL1$DUCON1)[2]/(table(datosL1$DUCON1)[1]+table(datosL1$DUCON1)[2]))*100,2)`%**. Esto nos indica que una vez encontrado el empleo hay cierto grado de estabilidad. Es muy evidente lo difícil que es encontrar empleo y vemos que **`r round((table(datosK1$BIN)[1]/(table(datosK1$BIN)[1]+table(datosK1$BIN)[2]))*100,2)`%** de los encuestados no han encontrado empleo el día de la encuesta, ni empleo previsto en los próximos 3 meses y solamente **`r round((table(datosK1$BIN)[2]/(table(datosK1$BIN)[1]+table(datosK1$BIN)[2]))*100,2)` %** tienen previsto un empleo. Podemos decir que la encuesta es representativa del país tomando en cuenta las distintas regiones porque la cantidad de los encuestados es relativa a las provincias dónde la población es mayor. Como es de esperar de las personas que respondieron la pregunta de nacionalidad **`r round((table(datosL1$NAC1)[1]/(table(datosL1$NAC1)[1]+table(datosL1$NAC1)[2]+table(datosL1$NAC1)[3]))*100,2)` %** son españolas, **`r round((table(datosL1$NAC1)[2]/(table(datosL1$NAC1)[1]+table(datosL1$NAC1)[2]+table(datosL1$NAC1)[3]))*100,2)`%** poseen doble nacionalidad y **`r round((table(datosL1$NAC1)[3]/(table(datosL1$NAC1)[1]+table(datosL1$NAC1)[2]+table(datosL1$NAC1)[3]))*100,2)`%** son extranjeros. Vemos que la mayor parte de la población posee una formación académica de secundaria y superior, y otra gran parte cuenta con educación primaria y general. También se puede observar que solamente **`r round((table(datosL1$TRAPLU)[1]/(table(datosL1$TRAPLU)[1]+table(datosL1$TRAPLU)[2]))*100,2)`%** posee otro empleo. Interesante es el hecho que la mayoría de los encuestados son mujeres  **`r round((table(datosL1$SEXO1)[2]/(table(datosL1$SEXO1)[1]+table(datosL1$SEXO1)[2]))*100,2)`%** contra  **`r round((table(datosL1$SEXO1)[1]/(table(datosL1$SEXO1)[1]+table(datosL1$SEXO1)[2]))*100,2)`%** siendo hombres. Vemos que los encuestados se encuentran dentro de la misma edad excepto por el grupo de mayores de más de 65 años que representan una gran parte de los encuestados.
+
+```{r Graficos, echo=FALSE}
+
+par(mfrow=c(1,2))
+
+barplot(table(datosL1$DUCON1),
+        main="Tipo de contrato",
+        col=c("steelblue"),
+        ylim=c(0,40000),
+        ylab="Encuestados",
+        names.arg=c("Temporal", "Indefinido"))
+
+barplot(table(datosK1$BIN),
+        main="Ha encontrado empleo",
+        col=c("steelblue"),
+        ylim=c(0,60000),
+        ylab="Encuestados",
+        names.arg=c("No", "Si"))
+
+#Tipo de contrato
+print("Tipo de contrato:")
+table(datosL1$DUCON1)
+#Tiene trabajo  
+print("Ha encontrado empleo:")
+table(datosK1$BIN)
+
+com<- c("Andalucía","Aragón", "Asturias", "Balears", "Canarias", "Cantabria", "Castilla y León", "Castilla-La Mancha", "Catalunya", "Comunitat Valenciana", "Extremadura", "Galicia", "Madrid", "Murcia", "Navarra", "País Vasco", "Rioja", "Ceuta", "Melilla")
+
+par(mfrow=c(1,1))
+
+barplot(table(datosL1$CCAA),
+        main="Comunidades",
+        col=c("steelblue"),
+        ylim=c(0,9000),
+        ylab="Encuestados",
+        names.arg=com,las=3)
+
+#Comunidad Autónoma
+print("Comunidad Autónoma:")
+table(datosL1$CCAA)
+
+par(mfrow=c(1,2))
+
+barplot(table(datosL1$NAC1),
+        main="Nacionalidad",
+        col=c("steelblue"),
+        ylim=c(0,60000),
+        ylab="Encuestados",
+        names.arg=c("Nacional","Doble","Extranjero"),las=3)
+
+lbls1 <- c("Analfabeto","Primaria incompleta","Primaria",
+           "Secundaria",
+           "General","Profesional","Superior")
+
+barplot(table(datosM1$NFORMA),
+    main="Formacion academica",
+    col=c("steelblue"),
+    ylim=c(0,40000),
+    ylab="Encuestados",
+    names.arg=lbls1,
+    las=3)
+
+#Nacionalidad
+print("Nacionalidad: ")
+table(datosL1$NAC1)
+#Formación
+print("Formacion Academica: ")
+table(datosM1$NFORMA)
+
+barplot(table(datosN1$TRAPLU),
+        main="Tiene otro empleo",
+        col=c("steelblue"),
+        ylim=c(0,60000),
+        ylab="Encuestados",
+        names.arg=c("Si", "No"))
+
+barplot(table(datos0$SEXO1),
+        main="Sexo",
+        col=c("steelblue"),
+        ylim=c(0,90000),
+        ylab="Encuestados",
+        names.arg=c("Mujer", "Hombre"))
+
+#Sexo
+print("Sexo: ")
+table(datos0$SEXO1) 
+#Trabaja en la semana de la encuesta
+print("Tiene otro empleo: ")
+table(datosN1$TRAPLU)
+
+lbls2 <- c("0 a 4 años","5 a 9 años","10 a 15 años","16-19 años",
+           "20-24 años","25-29 años","30-34 años","35-39 años",
+           "40-44 años","45-49 años","50-54 años","55-59 años",
+           "60-64 años","65< años")
+
+par(mfrow=c(1,1))
+
+barplot(table(datos0$EDAD5),
+        main="Edad",
+        col=c("steelblue"),
+        ylim=c(0,40000),
+        ylab="Encuestados",
+        names.arg=lbls2,
+        las=3)
+#Edad
+print("Edad: ")
+table(datos0$EDAD5)
+
+```
+
+# Modelo
+
+## Adecuación a los datos y objetivo.
+
+En los dos modelos analizados las variables dependientes serán dicotómicas, así como la mayoría de las variables independientes; en ningún caso una variable presentará valores negativos.
+El objetivo de este trabajo y de los modelos realizados en el marco del mismo es de estimar los factores que influyen en la obtención de un empleo y la calidad de este; usamos como indicadores respectivamente las variables **BIN** y **DUCON** asumiendo que un contrato indefinido está relacionado con una calidad de trabajo superior a la esperada en un contrato temporal. El objetivo es, pues, una predicción, y para ello usaremos un *modelo de regresión*; dado que las variables respuestas usadas son dicotómicas, en el caso de obtención de empleo (“BIN”) 1 equivaldrá a tener empleo y 0 a no tenerlo, y en el caso de la calidad de empleo (**DUCON1**) valores 1 implican mejor calidad y valores 0 peor calidad;  sería posible utilizar un modelo de regresión generalizado logit o probit; en este trabajo los modelos estimados serán *modelos logit*.
+
+## Implementación
+
+Para implementar el modelo en Rstudio basta con utilizar el comando *glm*, especificando la familia *binomial* y la función link *logit*. Para la selección de varibales explicativas nos serviremos de la función *step*.
+
+### Modelo explicando si el trabajo es temporal o indefinido 
+
+```{r Ducon1_logit}
+logit0 <- step(glm(DUCON1 ~ factor(CCAA) + factor(SEXO1) + factor(NFORMA) + factor(NAC1) + factor(EDAD5),
+              family = binomial(link = "logit"),
+              data = datosL1.train))
+```
+
+### Modelo explicando si se obtiene trabajo o no
+
+```{r BIN_logit}
+logit1 <- step(glm(BIN ~ factor(CCAA) + factor(SEXO1) + factor(NFORMA) + factor(NAC1) + factor(EDAD5),
+                   family = binomial(link = "logit"),
+                   data = datosK1.train))
+```
+
+## Validación
+
+Una manera de ver si el modelo ajusta bien es comprobar si la devianza residual está por debajo del valor crítico al 5% para una chi-cuadrado con los grados de libertad correspondientes, procedemos a calcular dichos valores y comprobar la validez de los modelos:
+
+### Tests
+
+```{r tests}
+#Modelo0#
+qchisq(0.95, df.residual(logit0)) 
+deviance(logit0) 
+pchisq(deviance(logit0),df.residual(logit0),lower.tail=FALSE)
+
+#Modelo1#
+qchisq(0.95, df.residual(logit1)) 
+deviance(logit1) 
+pchisq(deviance(logit1),df.residual(logit1),lower.tail=FALSE)
+
+```
+
+Vemos que en ambos modelos la devianza en menor que el valor crítico. También podemos observar que el valor p en ambos modelos es superior a 0.05, **`r pchisq(deviance(logit0),df.residual(logit0),lower.tail=FALSE)`** en el primer modelo y **`r pchisq(deviance(logit1),df.residual(logit1),lower.tail=FALSE)`** en el segundo, por lo que podemos concluir que ambos modelos tienen un buen ajuste ya que con la hipótesis nula: ¿El ajuste es bueno? y si tenemos un p>0.05 no rechazamos la hipótesis nula y por tanto ambos modelos son buenos.    
+
+# Resultados
+
+## Modelo explicando si el trabajo es indefinido o temporal 
+
+```{r logit0}
+summary(logit0)
+```
+
+Los resultados demuestran que hay una alta relación entre las variables explicativas *CCAA, SEXO1, NFORMA, NAC1, EDAD5* que fueron incluidas en el modelo con la variable respuesta *DUCON1* ya que el p-valor de los coeficientes asociados son menores al 0.05 por lo que según la hipótesis nula: El coeficiente es igual a cero, es rechazada en favor a la alternativa que son distintos a cero.
+
+## Modelo explicando si se obtiene trabajo o no
+
+```{r logit1}
+summary(logit1)
+```
+
+Los resultados demuestran que hay una alta relación entre las variables explicativas *SEXO1, NFORMA, NAC1, EDAD5* y moderadamente con *CCAA* que fueron incluidas en el modelo con la variable respuesta *BIN* ya que el p-valor de los coeficientes asociados son menores al 0.05 por lo que según la hipótesis nula: El coeficiente es igual a cero, es rechazada en favor a la alternativa que son distintos a cero.
+
+# Predicciones
+
+Procedemos a realizar las matrices de confusión para el modelo **logit0** y **logit1** usando un *cut* de 0,05 y de 0,01 respectivamente, con esto podremos identificar la capacidad discriminatoria del modelo.
+
+```{r predicciones}
+#Cut de 5% logit0#
+datosL1.train$pred=predict(logit0, datosL1.train, type="response") 
+cut=0.05 
+datosL1.train$p=0 
+datosL1.train$p[datosL1.train$pred>cut]=1 
+table(datosL1.train$DUCON1, datosL1.train$p)
+
+#Cut de 5% logit1#
+datosK1.train$pred=predict(logit1, datosK1.train, type="response") 
+cut=0.05 
+datosK1.train$p=0 
+datosK1.train$p[datosK1.train$pred>cut]=1 
+table(datosK1.train$BIN, datosK1.train$p)
+
+##Cut del 1%##
+#Cut de 1% logit0#
+datosL1.train$pred=predict(logit0, datosL1.train, type="response") 
+cut=0.01 
+datosL1.train$p=0 
+datosL1.train$p[datosL1.train$pred>cut]=1 
+table(datosL1.train$DUCON1, datosL1.train$p)
+
+#Cut de 1% logit1#
+datosK1.train$pred=predict(logit1, datosK1.train, type="response") 
+cut=0.01 
+datosK1.train$p=0 
+datosK1.train$p[datosK1.train$pred>cut]=1 
+table(datosK1.train$BIN, datosK1.train$p)
+```
+
+Creamos también las curvas ROC de ambos modelos, **logit0** para *DUCON1* y **logit1** para *BIN* utilizando la muestra de test. Seguidamente, calculamos el área bajo la curva roc y matriz de confusión para estos datos de testeo.
+
+```{r ROC}
+#ROC Curve#
+datosL1.test$pred=predict(logit0,datosL1.test, type="response") 
+datosK1.test$pred=predict(logit1,datosK1.test, type="response") 
+
+#DUCON1 logit0#
+(D5=roc(datosL1.test$DUCON1,datosL1.test$pred, data=datosL1.test, quiet=FALSE,levels = c(0, 1), direction = "<"))
+
+plot(D5)
+auc(D5)
+#BIN logit1#
+(B5=roc(datosK1.test$BIN,datosK1.test$pred, data=datosK1.test, quiet=FALSE,levels = c(0, 1), direction = "<"))
+
+plot(B5)
+auc(B5)
+
+##Cut del 1%##
+#Cut de 1% logit0#
+datosL1.test$pred=predict(logit0, datosL1.test, type="response") 
+cut=0.01 
+datosL1.test$p=0 
+datosL1.test$p[datosL1.test$pred>cut]=1 
+table(datosL1.test$DUCON1, datosL1.test$p)
+
+#Cut de 1% logit1#
+datosK1.test$pred=predict(logit1, datosK1.test, type="response") 
+cut=0.01 
+datosK1.test$p=0 
+datosK1.test$p[datosK1.test$pred>cut]=1 
+table(datosK1.test$BIN, datosK1.test$p)
+
+```
+
+El área bajo la curva ROC puede estar entre 0.5 y 1 donde 1 representa un valor diagnóstico perfecto mientras que entre mas cercano a 0.5 es una prueba sin capacidad diagnóstica. En este caso, ambos modelos poseen una capacidad discriminaroria diagnóstica media y media elevada para el primer y segundo modelo respectivamente.
+
+Podemos observar cómo ambos modelos tienen buen poder predictivo sin embargo nuestro modelo **logit1** presenta una capacidad predictiva mejor que nuestro modelo **logit0**, **`r round(auc(B5)*100,2)`%**> **`r round(auc(D5)*100,2)`%**.
+
+A continuacion presentamos de forma dinamica las predicciones del model donde se puede encontrar la probabilidad de obtener un empleo:
+
+
+```{r, echo=FALSE}
+      radioButtons(inputId = "NAC2", label="Nacionalidad:", selected = "1", choiceNames = c("Espanol","Doble Nacionalidad", "Extrangero"), choiceValues = c("1","2","3"))
+      
+      radioButtons(inputId = "SEXO2", label = "Sexo:", selected = "0", choiceNames = c("Mujer","Hombre"), choiceValues = c("0","1"))
+
+      radioButtons(inputId = "NFORMA2", label="Formacion Academica:", selected = "0", choiceNames = c("Analfabeta","Educacion Primaria Incompleta", "Educacion Primaria","Secundaria", "Orientacion General","Orientacion Profesional", "Educacion Superior"), choiceValues = c("0","1","2","3","4","5","6"))     
+      
+      radioButtons(inputId = "EDAD2", label="Edad:", selected = "3", choiceNames = c("16-19 anos","20-24 anos", "25-29 anos","30-34 anos", "35-39 anos","40-44 anos", "45-49 anos","50-54 anos","55-59 anos", "60-64 anos","65 o mas anos"), choiceValues = c("3","4","5","6","7","8","9","10","11","12","13"))  
+      
+      radioButtons(inputId = "CCAA2", label="Comunidad Autonoma:", selected = "1", choiceNames = c("Andalucía","Aragón", "Principado de Asturias","Illes Balears", "Canarias","Cantabria", "Castilla y León","Castilla-La Mancha","Cataluña", "Comunitat Valenciana","Extremadura","Galicia", "Comunidad de Madrid", "Región de Murcia", "Comunidad Foral de Navarra","País Vasco","La Rioja", "Ceuta", "Melilla"), choiceValues = c("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19"))  
+
+```
+
+```{r, echo=FALSE}
+  renderTable({
+    newDat=data.frame(CCAA=input$CCAA2, SEXO1=input$SEXO2, NFORMA=input$NFORMA2, NAC1=input$NAC2, EDAD5=input$EDAD2)
+    newDat
+    newVal <- round(predict(logit1, newDat,
+type="response")*100,2)
+    newVal
+  })
+```
+
+Posteriormente presentamos de forma dinamica las predicciones del model donde se puede encontrar la probabilidad de conseguir un empleo de contrato indefinido:
+
+```{r, echo=FALSE}
+
+par(mfrow=c(1,5))
+
+      radioButtons(inputId = "NAC1", label="Nacionalidad:", selected = "1", choiceNames = c("Espanol","Doble Nacionalidad", "Extrangero"), choiceValues = c("1","2","3"))
+      
+      radioButtons(inputId = "SEXO1", label = "Sexo:", selected = "0", choiceNames = c("Mujer","Hombre"), choiceValues = c("0","1"))
+
+      radioButtons(inputId = "NFORMA", label="Formacion Academica:", selected = "0", choiceNames = c("Analfabeta","Educacion Primaria Incompleta", "Educacion Primaria","Secundaria", "Orientacion General","Orientacion Profesional", "Educacion Superior"), choiceValues = c("0","1","2","3","4","5","6"))     
+      
+      radioButtons(inputId = "EDAD5", label="Edad:", selected = "3", choiceNames = c("16-19 anos","20-24 anos", "25-29 anos","30-34 anos", "35-39 anos","40-44 anos", "45-49 anos","50-54 anos","55-59 anos", "60-64 anos","65 o mas anos"), choiceValues = c("3","4","5","6","7","8","9","10","11","12","13"))  
+      
+      radioButtons(inputId = "CCAA", label="Comunidad Autonoma:", selected = "1", choiceNames = c("Andalucía","Aragón", "Principado de Asturias","Illes Balears", "Canarias","Cantabria", "Castilla y León","Castilla-La Mancha","Cataluña", "Comunitat Valenciana","Extremadura","Galicia", "Comunidad de Madrid", "Región de Murcia", "Comunidad Foral de Navarra","País Vasco","La Rioja", "Ceuta", "Melilla"), choiceValues = c("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19"))  
+```
+
+```{r, echo=FALSE}
+  renderTable({
+    newData=data.frame(CCAA=input$CCAA, SEXO1=input$SEXO1, NFORMA=input$NFORMA, NAC1=input$NAC1, EDAD5=input$EDAD5)
+    newData
+    newValue <- round(predict(logit0, newData,
+type="response")*100,2)
+    newValue
+  })
+```
+
+# Conclusiones
+
+El objetivo principal de este trabajo era identificar los principales determinantes del desempleo en España. Por este motivo decidimos utilizar la encuesta del EPA del primer trimestre del 2020 y analizar las probabilidades de encontrar un empleo y las de que éste sea de calidad, para lo que hemos considerado que el tipo de contrato (indefinido o temporal) podría ser una buena medida. Al realizar esto encontramos que las variables de edad, sexo, nacionalidad, provincia de residencia, y formación académica forman parte fundamental para entender el desempleo. Apoyándonos en un modelo de regresión del tipo Logit encontramos que hay una buena relación entre las variables antes mencionadas con las variables de interés que describen el haber encontrado un empleo y el tipo de contrato del mismo. 
