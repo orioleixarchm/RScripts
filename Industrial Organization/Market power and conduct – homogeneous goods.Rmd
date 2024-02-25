@@ -1,0 +1,145 @@
+---
+title: 'Industrial Organization: Market power and conduct – homogeneous goods'
+author: "Oriol Eixarch  0872954"
+date: "10/3/2022"
+output:
+  pdf_document: default
+  word_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## I
+
+Summary statistics of the dataset:
+
+```{r, echo=FALSE, warning=FALSE, include=FALSE, }
+local({r <- getOption("repos")
+       r["CRAN"] <- 'http://cran.us.r-project.org'
+       options(repos=r)})
+load("C:/Users/Oriol/OneDrive/UNI/MASTER/Industrial Organization/Assignment I/.RData")
+install.packages("ivreg")
+library(ivreg)
+attach(databeer)
+```
+
+```{r,echo=TRUE}
+summary(databeer)
+```
+
+
+**Linear demand specification:**
+
+
+$$
+Q=a_0+a_1P+a_2tv+a_3party+a_4PZ+u
+$$
+
+**Linear marginal cost specification:**
+
+$$
+MC=c_0+c_1Q+c_2hp+c_3yp+e
+$$
+
+**Supply equation:** 
+
+
+$$
+P=b_0+b_1Q-\theta Q^*+b_2hp+b_3yp+v 
+$$
+$$
+ Q^* = \frac{1}{(a_1+a_4Z)}*Q
+$$
+
+
+**Implied empirical model of demand and supply:**
+
+
+$$
+Q=a_0+a_1P+a_2tv+a_3party+a_4PZ+u  
+$$
+$$
+P=b_0+b_1Q-\theta Q^*+b_2hp+b_3yp+v
+$$
+
+## II
+
+```{r,echo=TRUE}
+PZ = P*Z
+lm(Q ~ P + tv + party + PZ, data = databeer)
+```
+
+P is an endogenous variable, correlated with the error term, thus OLS would deliver incosnsitent estimators. The impact of P would depend on cov(P,u), if it were positive, we would be underestimating the impact of an increase in prices given that P is expected to have a negative effect on demand (b<0), if it were negative, we would be overestimating the impact an increase in prices wuld have on demand.
+
+## III
+
+```{r,echo=TRUE}
+(IV=ivreg(Q ~ P + tv + party + PZ | hp + yp + tv + party, data = databeer))
+```
+
+
+The 2SlS shows that under OLS approach, we were underestimating the impact of P, we can clearly see that the last day is indeed relevant when it comes to beer consumption. Our estimates differ from those of OLS for all variables.As for the overall results, all variables seem to be significant except from the constant, our newly obtained sd values are  slighly larger than those obtained in OLS,an expected outcome when using iv regressions.
+
+## IV
+
+```{r,echo=TRUE}
+elast = (IV$coefficients[2]+IV$coefficients[5]*Z) * P / Q 
+summary(elast)
+```
+
+When Z=0 and Z=1 
+
+```{r,echo=TRUE}
+databeer$elast=elast
+tapply(databeer$elast,databeer$Z,summary)
+```
+
+Average elasticity is around -1.5 but as we can see from the data, on the last week of the month elasticity does indeed increase and significantly so, going from -1.4 in the other weeks to -2. This seems to confirm the hypothesis that consumers are more elastic in the last week due to budget constraints.
+
+## V
+
+```{r,echo=TRUE}
+Qstar = -Q/(IV$coefficients[2]+IV$coefficients[5]*Z)
+(IVTheta=ivreg(P ~ Q + Qstar + hp + yp | party + tv + hp + yp + Qstar, data = databeer))
+```
+
+Obtained $\theta$ = `r IVTheta$coefficients[3]`.
+
+The marginal cost shifters have a sizeable and significant impact on the prices but the most important influence comes from the produced quantity. We comment on the conduct parameter on question 7.
+
+## VI
+
+```{r,echo=TRUE}
+
+MC = P + IVTheta$coefficients[3]*((Q/(IV$coefficients[2]+IV$coefficients[5]*Z))) 
+summary(MC)
+```
+
+When Z=0 and Z=1 
+
+```{r,echo=TRUE}
+databeer$MC=MC
+tapply(databeer$MC,databeer$Z,summary)
+```
+
+As for the results themselves, marginal costs also appear to be affected by the last week of the month, dropping to 837.6 from 977.4. This drop can be attributed to the reduced production due to more elastic demand.
+
+## VII
+
+```{r,echo=TRUE}
+C=confint(IVTheta)
+C[3,1:2]
+```
+
+The conduct parameter is estimated at .3514466, being closer to 0 than to 1, so the market appears to be competitive. The 95% confidence interval is `r C[3,1]`, `r C[3,2]`, which is quite a small range. Conduct is the coefficient of $Q^*$ which is a term comprised of $a_1$ and $a_4$, both price coefficients. Therefore, we believe that the most important variation in identifying conduct is the variation of the prices.
+
+## VIII
+
+We did compute the reduced form of Q and what we found was : <br />
+$Q = (1 + \theta - b_1*(a_1+a_4*Z))^{-1}*((a_0 + (a_1 +a_4*Z)*b_0) + a_2*tv + a_3*party + (a_1*b_2+a_4*Z)*b_2*hp + (a_1+a_4*Z)*b_3*yp +  (a_1+a_4*Z)*v+u)$.<br />
+This calculation can very much be wrong, we only did it once because we couldn't figure out some things after we obtain the reduced form. Questions 2 and 3 give us 2 sets of alphas to plug in on the reduced forms, the problem is that we don't have the errors u and v and the betas. As for the betas we thought of running the regression $ivreg$ $P$ $hp$ $yp$ ($Q$ = $tv$ $party$) (STATA), with which we obtain $b_0$, $b_2$ and $b_3$. For $b_1$, we assume that $\theta$ is 1 since we have a cartel and we solve the predicted $b_1 = realb_1 - \frac{1}{a_1+a_4*Z}$ so we would get 2 sets of $b_1$. We are not sure at all if this is correct econometrically or economically, this is the only way we thought of of finding betas. As for the error terms we are unsure how to obtain them. Finally if all that we said was correct and we had a way of obtaining error terms then maybe we could predict P by going back to its reduced form, and plugging in all terms of coefficients as well as the mean of each of the variables $tv$ $party$ $hp$ $yp$ to create a predicted $P$.
+
