@@ -1,12 +1,12 @@
 ########################################################
 # Advanced Time Series Analysis                        #
-# Analysing Inlation and Predicting CPI and Inflation  #
+# Analysing Inlation, and Prices: Univariate Approach  #
 # Oriol Eixarch Mejías r0872954 12/10/2025             #
 ########################################################
 
 #   0 Preparation and Set Up
 ##  0.1 Loading packages
-packages <- c("quantmod","dplyr","readxl","lubridate","CADFtest","forecast","zoo",'pander')
+packages <- c("quantmod","dplyr","readxl","lubridate","CADFtest","forecast","zoo",'pander','urca','vars')
 needed <- setdiff(packages,rownames(installed.packages()))
 if(length(needed)) install.packages(needed, dependencies=TRUE)
 invisible(lapply(packages,library,character.only=TRUE))
@@ -33,7 +33,7 @@ pander_display_test <- function(test){
   pander(coeff_table, caption="Test's Coefficients Significance")
 }
 
-### 0.2.3 Simulating "CheckResiduals" function from Forecast using in-course materials
+### 0.2.2 Simulating "CheckResiduals" function from Forecast using in-course materials
 residual_plots <- function(residuals,model_name, lags=48){
   bt <- Box.test(residuals,lag=lags,type='Ljung-Box')
   layout(matrix(c(1,2,3,3),nrow=2,byrow=TRUE))
@@ -49,7 +49,26 @@ residual_plots <- function(residuals,model_name, lags=48){
   return(pander(bt))
   layout(1)
 }
-### 0.2.4 Expanding Errors computation and optional plotting
+
+### 0.2.3 MAPE Computation
+MAPE_comp <- function(original_ts,errors, multi=FALSE){
+  if (multi){
+    S <- round(nrow(original_ts)*0.80)
+  } else {
+    S <- round(length(original_ts)*0.80)
+  }
+  h <- 1
+  start_date <- time(original_ts)[S + h]
+  actual_serie <- window(original_ts, start=start_date)
+  if (multi){
+    MAPE <- round(colMeans(abs(errors/actual_serie)),3)
+  } else {
+    MAPE <- round(mean(abs(errors/actual_serie)),3)
+  }
+  return(MAPE)
+}
+
+### 0.2.4 Univariate Expanding Errors computation and optional plotting 
 expanding_errors <- function(serie, arma_order, seasonal_order,horizon=1, plot_serie_name=NULL){
   S <- round(length(serie)*0.80)
   h <- horizon
@@ -88,7 +107,7 @@ expanding_errors <- function(serie, arma_order, seasonal_order,horizon=1, plot_s
     lines(forecast_roll_ts, col='red',type='l',lty=1,lwd=2)
     lines(upper_ci_roll_ts, lty=3, lwd=2, col='orange')
     lines(lower_ci_roll_ts, lty=3, lwd=2, col='orange')
-    legend('bottomright', legend=c('Actual','Forecast','Bounds'), cex=0.75,
+    legend('bottomright', legend=c('Actual','Forecast','Bounds'),
            col=c('royalblue','red','orange'), lty=c(1,1,3), lwd=c(2,2,2))
     grid()
   }
@@ -99,14 +118,38 @@ expanding_errors <- function(serie, arma_order, seasonal_order,horizon=1, plot_s
 # Harmonized Index of Consumer Prices (FRED via EUROSTAT): All Items for the Euro Area 19
 # 3-Month or 90-Day Rates and Yields (FRED via OECD): Interbank Rates for the Euro Area 19
 # Monthly Unemployment in the EU area (20 countries)
-getSymbols(c("CP0000EZ19M086NEST"),src='FRED')
+getSymbols(c("CP0000EZ19M086NEST","IR3TIB01EZM156N"),src='FRED')
+path  <-  "C:/Users/User/OneDrive/UNI/MASTER/Adv Time Series Analysis/Assignment/"
+path <- paste0(path,"Unemployment_monthly_2000_2025.xlsx")
+EU_unemployment <- read_excel(path, sheet='Data_I_pct')
+EU_unemployment$TIME <- ym(EU_unemployment$TIME)
 str(CP0000EZ19M086NEST)
+str(IR3TIB01EZM156N)
+str(EU_unemployment)
 
-##  0.4 Cleaning
-txt_filter <- paste0('2000-01-01','/')
+##  0.4 Cleaning data
+max_date_available <- min(max(index(CP0000EZ19M086NEST)),
+                         max(index(IR3TIB01EZM156N)),
+                         max(EU_unemployment$TIME))
+txt_filter <- paste0('2000-01-01','/',max_date_available)
 Prices_2000_2025 <- CP0000EZ19M086NEST[txt_filter]
-Prices_ts <- ts(data=Prices_2000_2025, start=c(2000,1), frequency=12)
+colnames(Prices_2000_2025) <- 'ConsumerPriceIndex'
+Rates_2000_2025 <- IR3TIB01EZM156N[txt_filter]
+colnames(Rates_2000_2025) <- 'InterbankRates'
+EU_unemployment_2000_2025 <- EU_unemployment %>% filter(TIME >= ymd('2000-01-01'), TIME <= max_date_available)
 
+##  0.5 Single Data frame 2000/01-2025/08 and R Time Series
+Data <- data.frame(
+  Date = EU_unemployment_2000_2025$TIME,
+  Prices = round(as.numeric(Prices_2000_2025$ConsumerPriceIndex),1),
+  Rates = round(as.numeric(Rates_2000_2025$InterbankRates),1),
+  Unemployment = round(as.numeric(EU_unemployment_2000_2025$`Euro area`),1),
+  row.names = NULL
+)
+
+Prices_ts <- ts(data=Data$Prices, start=c(2000,1), frequency=12)
+Rates_ts <- ts(data=Data$Rates, start=c(2000,1), frequency=12)
+Unemployment_ts <- ts(data=Data$Unemployment, start=c(2000,1), frequency=12)
 
 #   1 Univariate Serie Analysis
 par(mfrow=c(3,1))
@@ -114,24 +157,24 @@ par(mar=c(3,4,2,1), oma=c(1,1,1,1))
 
 ##  1.1 Visualization
 plot.ts(Prices_ts,col='blue',lty=1,lwd=3,xlab='',ylab='CPI Index (Base 2015)',
-        main="Consumer Price Index (Base 2015) monthly Evolution in the EU Area 2000-2025")
+     main="Consumer Price Index (Base 2015) monthly Evolution in the EU Area 2000-2025")
 grid()
 
 ##  1.2 Testing Series for unit root (ADF)
-test_prices <- CADFtest(Prices_ts, type='drift', criterion='BIC', max.lag.y=round(sqrt(length(Prices_ts))))
-pander_display_test(test_prices)
-test_prices <- CADFtest(Prices_ts, type='none', criterion='BIC', max.lag.y=round(sqrt(length(Prices_ts))))
+test_prices <- CADFtest(Prices_ts, type='trend', criterion='BIC', max.lag.y=round(sqrt(length(Prices_ts))))
 pander_display_test(test_prices)
 # Our Series seems to have a Stochastic trend (we do not reject H0 and trend is significant), so is the intercept.
-# Our Series is not in % terms and we woulike it to be, thus to solve both non-stationarity and the unit-scaling
-# we will take log-differences.
+# Our Series is not in % terms and we would like it to be, thus to solve both non-stationarity and the unit-scaling
+# we will take log-differences. We do not test other scenarios (no trend and no trend or drift) as the visual confirms
+# the presence of a trend.
+
 Prices_ts_log <- log(Prices_ts)
 plot.ts(Prices_ts_log, col='blue', lty=1, lwd=3,xlab='',ylab='Log CPI Index (Base 2015)',
         main="Log Consumer Price Index (Base 2015) monthly Evolution in the EU Area 2000-2025")
 grid()
 Prices_ts_dif_log <- diff(log(Prices_ts))*100                          
 plot.ts(Prices_ts_dif_log,col='blue',lty=1,lwd=3,xlab='',ylab='Percentage Points (%)',
-        main="Monthly Inflation in the EU Area 2000-2025 (%)")
+     main="Monthly Inflation in the EU Area 2000-2025 (%)")
 grid()
 par(mfrow=c(1,1))
 
@@ -179,6 +222,7 @@ axis(1, at=seq(0,48,by=6)/12, labels=seq(0,48,by=6))
 pacf(Prices_ts_dif_log_seas, main='Partial Autocorrelogram of Stationary Price Variation (Inflation) Seasonalized[12]',
      ylab='',xaxt='n',xlab='Lag (Months)',lag.max=48)
 axis(1, at=seq(0,48, by=6)/12, labels=seq(0,48, by=6))
+par(mfrow=c(1,1))
 
 ##  1.5 Modelization
 # PACF and ACF suggest AR order 1 and MA order 1, we will also check different orders of ARMA models; 
@@ -263,14 +307,14 @@ train_Inflation <- window(Prices_ts_dif_log, end=c(2021,10))
 test_Inflation <- window(Prices_ts_dif_log, start=c(2021,11))
 
 forecast_model <- arima(train_Inflation,order=c(1,0,1), seasonal=list(order=c(2,1,1),
-                                                                      period=12, include.mean=FALSE))
+                        period=12, include.mean=FALSE))
 forecast <- predict(forecast_model,n.ahead=length(test_Inflation))
 inflation_pred <- forecast$pred
 up_bound <- inflation_pred + qnorm(0.975)*forecast$se
 low_bound <- inflation_pred - qnorm(0.975)*forecast$se
 
 plot.ts(test_Inflation,col='blue',type="l", lty=1, lwd=2,xlab="",ylim=c(-1.0,2.6), 
-        ylab="Infation (Pct Change in CPI)", main='Actual Inflation vs Forecasted from 2021-11 to 2025-08')
+     ylab="Infation (Pct Change in CPI)", main='Actual Inflation vs Forecasted from 2021-11 to 2025-08')
 lines(inflation_pred,lty=1, lwd=2, col='red')
 lines(up_bound,lty=3, lwd=2, col='orange')
 lines(low_bound,lty=3, lwd=2, col='orange')
@@ -279,9 +323,9 @@ legend("topright",legend=c('Actual','Forecasted','Confidence Bounds'),
 grid()
 
 ### 1.6.2 Inflation Confidence Interval from Forecast Package
-forecast_forecast_package <- forecast(forecast_model,h=length(test_Inflation))
+forecast_illegal <- forecast(forecast_model,h=length(test_Inflation))
 prev_periods=12
-plot(forecast_forecast_package, prev_periods,main='SARIMA(1,0,1)(1,0,1) Inflation + forecast from 2020-11 to 2025',
+plot(forecast_illegal, prev_periods,main='SARIMA(1,0,1)(1,0,1) Inflation + forecast from 2020-11 to 2025',
      ylab='Infation (PCt Change in CPI)', ylim=c(-1,2.5))
 lines(window(Prices_ts_dif_log,start=c(2020,11)), col="black", lwd=2)
 legend("topright", legend=c("Actual",'Forecast'), col=c('black','royalblue'), lwd=2, lty=c(1,1,3), cex=0.7)
@@ -297,14 +341,14 @@ train_Prices <- window(Prices_ts_log, end=c(2021,10))
 test_Prices <- window(Prices_ts, start=c(2021,11))
 
 forecast_model <- arima(train_Prices,order=c(1,1,1), seasonal=list(order=c(2,1,1),
-                                                                   period=12, include.mean=FALSE))
+                        period=12, include.mean=FALSE))
 forecast <- predict(forecast_model,n.ahead=length(test_Prices))
 forecasted_CPI_arima <- exp(forecast$pred)
 upper_arima <- exp(forecast$pred + qnorm(0.975)*forecast$se)
 lower_arima <- exp(forecast$pred - qnorm(0.975)*forecast$se)
 
 plot.ts(test_Prices,col='blue',type="l", lty=1, lwd=2,xlab="", ylim=c(105,130),
-        ylab="Base 2015 CPI", main='CPI and SARIMA-Forecasted CPI from November 2021 to August 2025')
+     ylab="Base 2015 CPI", main='CPI and SARIMA-Forecasted CPI from November 2021 to August 2025')
 lines(forecasted_CPI_arima,lty=1, lwd=2, col='red')
 lines(upper_arima,lty=2, lwd=2, col='orange')
 lines(lower_arima,lty=2, lwd=2, col='orange')
@@ -313,13 +357,13 @@ legend("bottomright",legend=c('Actual','Forecasted','Bounds'),
 grid()
 
 ### 1.6.4 Inflation Confidence Interval from Forecast Package
-forecast_forecast_package <- forecast(forecast_model,h=length(test_Prices))
-forecast_forecast_package$mean <- exp(forecast_forecast_package$mean)
-forecast_forecast_package$lower <- exp(forecast_forecast_package$lower)
-forecast_forecast_package$upper <- exp(forecast_forecast_package$upper)
-forecast_forecast_package$x <- exp(forecast_forecast_package$x)
+forecast_illegal <- forecast(forecast_model,h=length(test_Prices))
+forecast_illegal$mean <- exp(forecast_illegal$mean)
+forecast_illegal$lower <- exp(forecast_illegal$lower)
+forecast_illegal$upper <- exp(forecast_illegal$upper)
+forecast_illegal$x <- exp(forecast_illegal$x)
 prev_periods=12
-plot(forecast_forecast_package, prev_periods, main='CPI and SARIMA-Forecasted Log CPI C.Intervals from November 2020 to August 2025', 
+plot(forecast_illegal, prev_periods, main='CPI and SARIMA-Forecasted Log CPI C.Intervals from November 2020 to August 2025', 
      ylim=c(105,130), ylab='Base 2015 CPI')
 lines(window(Prices_ts,start=c(2020,11)), col="black", lwd=2)
 legend("bottomright",legend=c("Actual","Forecast"), col=c('black','royalblue'), lwd=c(2,2), lty=c(1,1), cex=0.7)
@@ -332,25 +376,32 @@ inflation_errors <- expanding_errors(Prices_ts_dif_log,c(1,0,1), c(2,1,1), plot_
 MSE_inflation <- mean(inflation_errors^2)
 RMSE_inflation <- sqrt(mean(inflation_errors^2))
 MAE_inflation <- mean(abs(inflation_errors))
+MAPE_inflation <- MAPE_comp(Prices_ts_dif_log,inflation_errors)
 
 cpi_errors <- expanding_errors(Prices_ts_log,c(1,1,1),c(2,1,1), plot_serie_name='Log CPI Base 2015')*100
 MSE_cpi <- mean(cpi_errors^2)
 RMSE_cpi <- sqrt(mean(cpi_errors^2))
 MAE_cpi <- mean(abs(cpi_errors))
+MAPE_cpi <- MAPE_comp(Prices_ts_log,cpi_errors)
 
 ### 1.7.2 Potential Automatically chosen models: Errors
 # The "forecast" command is overrun when the "Forecast" package is loaded so we must use auto arima.
 auto_model <- auto.arima(Prices_ts_log)
-auto_forecast_errors <- expanding_errors(Prices_ts_log,c(1,1,1),c(0,1,1))*100
+arma_params <- auto_model$arma # follows this structure (p,q,P,Q,m,d,D) not (p,d,q,P,D,Q,m)
+arma_order <- c(arma_params[1],arma_params[6],arma_params[2])
+seasonal_order <- c(arma_params[3],arma_params[7],arma_params[4])
+auto_forecast_errors <- expanding_errors(Prices_ts_log,arma_order,seasonal_order)*100
 MSE_cpi_auto <- mean(auto_forecast_errors^2)
 RMSE_cpi_auto <- sqrt(mean(auto_forecast_errors^2))
 MAE_cpi_auto <- mean(abs(auto_forecast_errors))
-errors <- matrix(round(c(MSE_inflation, RMSE_inflation, MAE_inflation,
-                         MSE_cpi, RMSE_cpi, MAE_cpi,
-                         MSE_cpi_auto, RMSE_cpi_auto, MAE_cpi_auto),2), nrow=3, ncol=3, byrow=FALSE)
+MAPE_cpi_auto <- MAPE_comp(Prices_ts_log,auto_forecast_errors)
+
+errors <- matrix(round(c(MSE_inflation, RMSE_inflation, MAE_inflation, MAPE_inflation,
+                         MSE_cpi, RMSE_cpi, MAE_cpi, MAPE_cpi,
+                         MSE_cpi_auto, RMSE_cpi_auto, MAE_cpi_auto, MAPE_cpi_auto),2), nrow=4, ncol=3, byrow=FALSE)
 df_errors <- as.data.frame(errors)
 colnames(df_errors) <- c('Inflation','CPI 2022-2025 (*100)','Auto-ARIMA (*100)')
-df_errors$Error <- c('MSE','RMSE','MAE')
+df_errors$Error <- c('MSE','RMSE','MAE','MAPE')
 df_errors <- df_errors %>% relocate(last_col(), .before=1)
 pander(df_errors, caption='Errors of Different predictions')
 
@@ -365,8 +416,3 @@ pander(dm.test(cpi_errors,auto_forecast_errors,h=1,power=2))
 # CPI: Our RMSE Shows that, on average our 2022 and 2023 forecasts are, respectively off by 0.054 and 0.85 units respectively.
 # The autogenerated model delivers larger Errors than our manual set SARIMA, despite, both predictions and models are statistically
 # equivalent regardless of the use of absolute or squared errors.
-
-
-
-
-
