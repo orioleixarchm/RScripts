@@ -1,6 +1,6 @@
 ########################################################
 # Advanced Time Series Analysis                        #
-# Analysing Inlation, and Prices: Univariate Approach  #
+# Analysing Inlation, Unemployment and Interest Rates  #
 # Oriol Eixarch Mejías r0872954 12/10/2025             #
 ########################################################
 
@@ -20,12 +20,12 @@ pander_display_test <- function(test){
   colnames(my_coeff)
   coeff_table <- as.data.frame(my_coeff)
   coeff_table[,4] <- ifelse(coeff_table[,4] < 0.01, 
-                            paste0(round(coeff_table[,4], 5), " ***"),
+                            paste0(round(coeff_table[,4], 7), " ***"),
                             ifelse(coeff_table[,4] < 0.05,
-                                   paste0(round(coeff_table[,4], 5), " **"),
+                                   paste0(round(coeff_table[,4], 7), " **"),
                                    ifelse(coeff_table[,4] < 0.1,
-                                          paste0(round(coeff_table[,4], 5), " *"),
-                                          round(coeff_table[,4], 5))))
+                                          paste0(round(coeff_table[,4], 7), " *"),
+                                          round(coeff_table[,4], 7))))
   coeff_table$Estimator <- rownames(coeff_table)
   coeff_table <- coeff_table %>% relocate(last_col(), .before=1)
   rownames(coeff_table) <- NULL
@@ -186,12 +186,9 @@ pander_display_test(test_prices_dif)
 # Intercept is significant, we can reject unit root, we have stationarity around a non-zero mean.
 
 ##  1.3 Checking for seasonality
-par(mfrow=c(2,1))
-monthplot(Prices_ts_dif_log,main='Infaltion Seasonality', xlab='', ylab='', labels=month.abb)
-# Seasonality is present indeed, we will proceed to season-defferentiate
-Prices_ts_dif_log_seas <- diff(Prices_ts_dif_log,lag=12)
-monthplot(Prices_ts_dif_log_seas,main='Season Diff Infaltion', xlab='', ylab='', labels=month.abb)
 par(mfrow=c(1,1))
+monthplot(Prices_ts_dif_log,main='Infaltion Seasonality', xlab='', ylab='', labels=month.abb)
+# Seasonality is present indeed, but stable, it does not drift (stable mean "horizontal bar" and recurring pattern)
 
 ##  1.4 AR-MA Orders
 par(mfrow=c(3,1))
@@ -214,12 +211,12 @@ axis(1, at=seq(0,48, by=6)/12, labels=seq(0,48, by=6))
 acf(Prices_ts_dif_log, main='Autocorrelogram of Stationary Price Variation (Inflation)',
     ylab='',xaxt='n',xlab='Lag (Months)', lag.max=48)
 axis(1, at=seq(0,48,by=6)/12, labels=seq(0,48,by=6))
-acf(Prices_ts_dif_log_seas, main='Autocorrelogram of Stationary Price Variation (Inflation) Seasonalized[12]',
+acf(Prices_ts_dif_log, main='Autocorrelogram of Stationary Price Variation (Inflation)',
     ylab='',xaxt='n',xlab='Lag (Months)', lag.max=48)
 axis(1, at=seq(0,48,by=6)/12, labels=seq(0,48,by=6))
 
 ### 1.4.4 Checking the AR order of Seasonalized ts
-pacf(Prices_ts_dif_log_seas, main='Partial Autocorrelogram of Stationary Price Variation (Inflation) Seasonalized[12]',
+pacf(Prices_ts_dif_log, main='Partial Autocorrelogram of Stationary Price Variation (Inflation)',
      ylab='',xaxt='n',xlab='Lag (Months)',lag.max=48)
 axis(1, at=seq(0,48, by=6)/12, labels=seq(0,48, by=6))
 par(mfrow=c(1,1))
@@ -233,71 +230,68 @@ par(mfrow=c(1,1))
 
 ### 1.5.1 Models
 # MA(1) and Ljung-Box test on residuals (residuals correlated?? H0: Residuals = White noise)
-ma1 <- arima(Prices_ts_dif_log_seas,order=c(0,0,1))
+ma1 <- arima(Prices_ts_dif_log,order=c(0,0,1))
 pander(ma1)
 pander(data.frame('BIC' = BIC(ma1)))
 residual_plots(ma1$residuals,'MA(1)')
 
 # AR(1) and Ljung-Box test on residuals (residuals correlated?? H0: Residuals = White noise)
-ar1 <- arima(Prices_ts_dif_log_seas,order=c(1,0,0))
+ar1 <- arima(Prices_ts_dif_log,order=c(1,0,0))
 pander(ar1)
 pander(data.frame('BIC' = BIC(ar1)))
 residual_plots(ar1$residuals,'AR(1)')
 
 # ARMA(1,1) and Ljung-Box test on residuals (residuals correlated?? H0: Residuals = White noise)
-arma11 <- arima(Prices_ts_dif_log_seas,order=c(1,0,1))
+arma11 <- arima(Prices_ts_dif_log,order=c(1,0,1))
 pander(arma11)
 pander(data.frame('BIC' = BIC(arma11)))
 residual_plots(arma11$residuals,'ARMA(1,1)')
 
 # SARMA(1,1) (ARMA + MU(1) Seasonality) and Ljung-Box test on residuals (residuals correlated?? H0: Residuals = White noise)
-sarma_11_ma <- arima(Prices_ts_dif_log_seas,order=c(1,0,1), seasonal=list(order=c(0,0,1), period=12))
+sarma_11_ma <- arima(Prices_ts_dif_log,order=c(1,0,1), seasonal=list(order=c(0,0,1), period=12))
 pander(sarma_11_ma)
 pander(data.frame('BIC' = BIC(sarma_11_ma)))
 residual_plots(sarma_11_ma$residuals,'SARMA(1,1)(0,1)')
 
 # SARMA(1,1) (ARMA + AR(1) Seasonality) and Ljung-Box test on residuals (residuals correlated?? H0: Residuals = White noise)
-sarma_11_ar <- arima(Prices_ts_dif_log_seas, order=c(1,0,1), seasonal=list(order=c(1,0,0), period=12))
+sarma_11_ar <- arima(Prices_ts_dif_log, order=c(1,0,1), seasonal=list(order=c(1,0,0), period=12))
 pander(sarma_11_ar)
 pander(data.frame('BIC' = BIC(sarma_11_ar)))
 residual_plots(sarma_11_ar$residuals,'SARMA(1,1)(1,0)')
 
 # SARMA(1,1) (ARMA + ARMA (1,1) Seasonality 12 periods) and Ljung-Box test on residuals (residuals correlated?? H0: Residuals = White noise)
-sarma_11_arma <- arima(Prices_ts_dif_log_seas, order=c(1,0,1), seasonal=list(order=c(1,0,1), period=12))
+sarma_11_arma <- arima(Prices_ts_dif_log, order=c(1,0,1), seasonal=list(order=c(1,0,1), period=12))
 pander(sarma_11_arma)
 pander(data.frame('BIC' = BIC(sarma_11_arma)))
 residual_plots(sarma_11_arma$residuals,'SARMA(1,1)(1,1)[12]')
 # Huge reduction between initial (MA) Ljung_Box Q statistic value at 48 lags (1082.1 to 74), which shows the sum of squared autocorrelations
+# The best model so far considering only AIC criteria.
 
 # SARMA(1,1) (ARMA + ARIMA (2,0,1) Seasonality 12 periods) and Ljung-Box test on residuals (residuals correlated?? H0: Residuals = White noise)
-sarma_11_arma <- arima(Prices_ts_dif_log_seas, order=c(1,0,1), seasonal=list(order=c(2,0,1), period=12))
+sarma_11_arma <- arima(Prices_ts_dif_log, order=c(1,0,1), seasonal=list(order=c(2,0,1), period=12))
 pander(sarma_11_arma)
 pander(data.frame('BIC' = BIC(sarma_11_arma)))
 residual_plots(sarma_11_arma$residuals,'SARMA(1,1)(2,0,1)[12]')
-# Slight reduction in both AIC and Q statistic, thus this is the best model so far WITHOUT taking into consideration
-# its increased complexity. Still, we can reject H0 of white noise at a 5% but not at a 1%.
-# Taking into account complexity, we can see that BIC delivers a higher value than its simpler predecessor 103.1 vs 99.9.
+# Slight increase in AIC and reduction in Q statistic, thus this is the best model so far WITHOUT taking into consideration
+# its increased complexity. Still, taking into account complexity, we can see that BIC delivers a higher value than its simpler predecessor 111 vs 105.
 
 # SARMA(1,1) (ARMA + ARIMA (1,0,2) Seasonality 12 periods) and Ljung-Box test on residuals (residuals correlated?? H0: Residuals = White noise)
-sarma_11_arma <- arima(Prices_ts_dif_log_seas, order=c(1,0,1), seasonal=list(order=c(1,0,2), period=12, include.mean=FALSE))
+sarma_11_arma <- arima(Prices_ts_dif_log, order=c(1,0,1), seasonal=list(order=c(1,0,2), period=12, include.mean=FALSE))
 pander(sarma_11_arma)
 pander(data.frame('BIC' = BIC(sarma_11_arma)))
 residual_plots(sarma_11_arma$residuals,'SARMA(1,1)(1,0,2)[12]')
-# Further Updating our seasonal orders delivers a worse Q statistic, we go from 67.48 to 73 we cannot reject the
-# H0 of our residuals being white noises at 1% level we do so, nonetheless at 5%.
-# Our AIC is largest than our two previous models 79.29. We will discard this model as the AIC is lower than simpler
-# counterparts and seasonality seems not to be significantly reduced, furthermore, we are dangerously increasing
-# the amount of parameters and thus the complexity of the model.
+# Further Updating our seasonal orders delivers a worse Q statistic, and worse AIC.
 
 ### 1.5.2 Conclusion
-# Relative to MA(1) and ARMA(1,1), the SARIMA(1,0,1)(2,1,1)[12] specification yields a large reduction in residual autocorrelation. The Ljung–Box
-# statistics drop from Q(48)=1035.2 to 67.48 for the MA(1), and from Q(48)=1037.3 to 67.48 for the ARMA(1,1), i.e., a substantial fall in the
+# Relative to MA(1) and ARMA(1,1), the SARIMA(1,0,1)(1,0,1)[12] specification yields a large reduction in residual autocorrelation. The Ljung–Box
+# statistics drop from Q(48)=406 to 76.97 for the MA(1), and from Q(48)=410 to 76.97 for the ARMA(1,1), i.e., a substantial fall in the
 # (weighted) sum of squared residual autocorrelations up to 48 months. Residual ACFs are largely within bounds, indicating the seasonal dynamics
-# are now well captured, we cannot reject of white noise residuals at 1%. The AIC of this model is the lowest of al th ones tested.
-# Despite those good results the SARIMA(1,0,1)(1,1,1)[12] presents a better BIC while a wose AIC and Q statistic.
+# are now well captured although not completely, due th strictness of the test at 48 lags, we formally reject residuals being white noisebut the plots 
+# may suggest otherwise. The AIC of this model is the lowest of all the ones tested.
+# Despite those good results the SARIMA(1,0,1)(2,0,1)[12] presents a lower Q statistic at the expense of a higher BiC.
 
 ##  1.6 Forecast
-par(mfrow=c(2,1))
+par(mfrow=c(3,1))
 par(mar=c(3,4,2,1), oma=c(1,1,1,1))
 
 ### 1.6.1 Inflation SARMA(1,1)
@@ -306,7 +300,7 @@ date_train_index <- as.yearmon(time(Prices_ts_dif_log)[train_index])
 train_Inflation <- window(Prices_ts_dif_log, end=c(2021,10))
 test_Inflation <- window(Prices_ts_dif_log, start=c(2021,11))
 
-forecast_model <- arima(train_Inflation,order=c(1,0,1), seasonal=list(order=c(2,1,1),
+forecast_model <- arima(train_Inflation,order=c(1,0,1), seasonal=list(order=c(2,0,1),
                         period=12, include.mean=FALSE))
 forecast <- predict(forecast_model,n.ahead=length(test_Inflation))
 inflation_pred <- forecast$pred
@@ -330,9 +324,19 @@ plot(forecast_illegal, prev_periods,main='SARIMA(1,0,1)(1,0,1) Inflation + forec
 lines(window(Prices_ts_dif_log,start=c(2020,11)), col="black", lwd=2)
 legend("topright", legend=c("Actual",'Forecast'), col=c('black','royalblue'), lwd=2, lty=c(1,1,3), cex=0.7)
 grid()
+
+### 1.6.3 Inflation Convergence to constant
+forecast_model_conv <- arima(Prices_ts_dif_log,order=c(1,0,1), seasonal=list(order=c(2,0,1),
+                                                                        period=12, include.mean=FALSE))
+forecast_conv <- predict(forecast_model_conv,n.ahead=500)
+inflation_pred_conv <- forecast_conv$pred
+
+plot.ts(inflation_pred_conv,col='blue',type="l", lty=1, lwd=2,xlab="", 
+        ylab="Infation (Pct Change in CPI)", main='Inflation Convergence after 500 periods (Months)')
+grid()
 par(mfrow=c(1,1))
 
-#### 1.6.3 CPI using SARIMA
+#### 1.6.4 CPI using SARIMA
 par(mfrow=c(2,1))
 par(mar=c(3,4,2,1), oma=c(1,1,1,0))
 train_index <- round(length(Prices_ts_log)*0.85)
@@ -340,7 +344,7 @@ date_train_index <- as.yearmon(time(Prices_ts_log)[train_index])
 train_Prices <- window(Prices_ts_log, end=c(2021,10))
 test_Prices <- window(Prices_ts, start=c(2021,11))
 
-forecast_model <- arima(train_Prices,order=c(1,1,1), seasonal=list(order=c(2,1,1),
+forecast_model <- arima(train_Prices,order=c(1,1,1), seasonal=list(order=c(2,0,1),
                         period=12, include.mean=FALSE))
 forecast <- predict(forecast_model,n.ahead=length(test_Prices))
 forecasted_CPI_arima <- exp(forecast$pred)
@@ -356,7 +360,7 @@ legend("bottomright",legend=c('Actual','Forecasted','Bounds'),
        col=c('blue','red','orange'), lwd=c(2,2,2), lty=c(1,1,3), cex=0.7)
 grid()
 
-### 1.6.4 Inflation Confidence Interval from Forecast Package
+### 1.6.5 CPI Confidence Interval from Forecast Package
 forecast_illegal <- forecast(forecast_model,h=length(test_Prices))
 forecast_illegal$mean <- exp(forecast_illegal$mean)
 forecast_illegal$lower <- exp(forecast_illegal$lower)
@@ -372,13 +376,13 @@ par(mfrow=c(1,1))
 
 ##  1.7 Prediction validation
 ### 1.7.1 Estimated models: Errors
-inflation_errors <- expanding_errors(Prices_ts_dif_log,c(1,0,1), c(2,1,1), plot_serie_name='Inflation (%)')
+inflation_errors <- expanding_errors(Prices_ts_dif_log,c(1,0,1), c(2,0,1), plot_serie_name='Inflation (%)')
 MSE_inflation <- mean(inflation_errors^2)
 RMSE_inflation <- sqrt(mean(inflation_errors^2))
 MAE_inflation <- mean(abs(inflation_errors))
 MAPE_inflation <- MAPE_comp(Prices_ts_dif_log,inflation_errors)
 
-cpi_errors <- expanding_errors(Prices_ts_log,c(1,1,1),c(2,1,1), plot_serie_name='Log CPI Base 2015')*100
+cpi_errors <- expanding_errors(Prices_ts_log,c(1,1,1),c(2,0,1), plot_serie_name='Log CPI Base 2015')*100
 MSE_cpi <- mean(cpi_errors^2)
 RMSE_cpi <- sqrt(mean(cpi_errors^2))
 MAE_cpi <- mean(abs(cpi_errors))
@@ -410,9 +414,9 @@ pander(dm.test(cpi_errors,auto_forecast_errors,h=1,power=1))
 pander(dm.test(cpi_errors,auto_forecast_errors,h=1,power=2))
 
 ### 1.7.3 Conclusion:
-# Inflation: Our RMSE shows that, on average our predicion is 0.54 pp off every time, that does not seem too large given the 
-# scale of our data (bound between and 2,5 and -0.5). Computing the MAPE would allow as to check the % deviation from the
-# true value, however since we deal with small magnitudes e.g 0 is not uncommon, we may get results hard to interpret. 
-# CPI: Our RMSE Shows that, on average our 2022 and 2023 forecasts are, respectively off by 0.054 and 0.85 units respectively.
-# The autogenerated model delivers larger Errors than our manual set SARIMA, despite, both predictions and models are statistically
-# equivalent regardless of the use of absolute or squared errors.
+# Inflation: Our RMSE shows that, on average our predicion is 0.41 pp off every time, that does not seem too large given the 
+# scale of our data (bound between and 2,5 and -1). Computing the MAPE would allow as to check the % deviation from the
+# true value, however since we deal with small magnitudes e.g 0 is not uncommon, we may get results hard to interpret or infinity. 
+# CPI: Our RMSE Shows that, on average our model and the automatic one are both off by 0.041 units.
+# The autogenerated model delivers slightly larger absolute Errors than our manual set SARIMA, despite, both predictions and models 
+# are statistically equivalent regardless of the use of absolute or squared errors.
