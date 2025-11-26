@@ -114,69 +114,6 @@ expanding_errors <- function(serie, arma_order, seasonal_order,horizon=1, plot_s
   return(errors)
 }
 
-### 0.2.5 Multivariate Expanding Errors computation and optional plotting 
-expanding_errors_multi <- function(series,VAR_order=2,coint_equations=1,horizon=1, plot=FALSE){
-  f <- frequency(series)
-  time_index <- time(series)
-  nombres <- colnames(series)
-  N <- nrow(series)
-  S <- round(N * 0.80)
-  h <- horizon
-  n_steps <- (N - h) - S + 1
-  forecast_roll <- matrix(NA, nrow=n_steps, ncol=ncol(series))
-  upper_roll <- matrix(NA, nrow=n_steps, ncol=ncol(series))
-  lower_roll <- matrix(NA, nrow=n_steps, ncol=ncol(series))
-  colnames(forecast_roll) <- colnames(upper_roll) <- colnames(lower_roll) <- colnames(series)
-  step_idx <- 0
-  for (i in S:(N - h)) {
-    step_idx <- step_idx + 1
-    end_time <- time_index[i]
-    muestra <- window(series, end=end_time)
-    trace_test <- ca.jo(muestra, type="trace",K=VAR_order,ecdet="const",spec="transitory")
-    vecm_var <- vec2var(trace_test, r=coint_equations)
-    forec <- predict(vecm_var, n.ahead = h)
-    names(forec$fcst) <- nombres
-    for (j in 1:ncol(series)) {
-      columna <- nombres[j]
-      forecast_roll[step_idx,j] <- forec$fcst[[columna]][h,"fcst"]
-      upper_roll[step_idx,j] <- forec$fcst[[columna]][h,"upper"]
-      lower_roll[step_idx,j] <- forec$fcst[[columna]][h,"lower"]
-    }
-  }
-  actual <- series[(S + h):N, , drop=FALSE]
-  errors <- actual - forecast_roll
-  if (plot){
-    par(mfrow=c(ncol(series),1))
-    par(mar=c(2,2,2,1), oma=c(1,1,1,1))
-    start_date <- time_index[S + h]
-    for (j in 1:ncol(series)){
-      actual_ts <- ts(actual[,j], start=start_date,frequency=f)
-      forecasted_ts <- ts(forecast_roll[,j], start=start_date, frequency=f)
-      upper_ts <- ts(upper_roll[,j], start=start_date, frequency=f)
-      lower_ts <- ts(lower_roll[,j], start=start_date, frequency=f)
-      plot.ts(actual_ts, col="royalblue", lwd=2, ylim=range(upper_ts,lower_ts,actual_ts,forecasted_ts),
-              main=paste("Actual vs Rolling VECM forecast:", nombres[j]), ylab=nombres[j],xlab="")
-      lines(forecasted_ts, col="red", lwd = 2)
-      lines(upper_ts, col="orange", lty=3, lwd=2)
-      lines(lower_ts, col="orange", lty=3, lwd=2)
-      legend("topleft",legend = c("Actual", "Forecast", "Bounds"),
-             col=c("royalblue", "red", "orange"),lty=c(1,1,3),lwd=c(2,2,2),cex=0.7)
-      grid()
-    }
-    par(mfrow=c(1, 1))
-  }
-  return(errors)
-}
-
-### 0.2.6 Deseasonalizing TS for multivariate analysis. 
-# Using cycle to get the number of the month and factor to treat is as dummy, otherwise would be anumeric variable from 1-12 a sort of trend.
-deseason <- function(Serie){
-  season_reg <- lm(as.numeric(Serie) ~ factor(cycle(Serie)))
-  seasonality_ts <- ts(fitted(season_reg), start=start(Serie), frequency=frequency(Serie))
-  deseasonalized <- Serie - seasonality_ts
-  return(deseasonalized)
-}
-
 ##  0.3 Getting raw data
 # Harmonized Index of Consumer Prices (FRED via EUROSTAT): All Items for the Euro Area 19
 # 3-Month or 90-Day Rates and Yields (FRED via OECD): Interbank Rates for the Euro Area 19
@@ -457,28 +394,45 @@ MAPE_cpi <- MAPE_comp(Prices_ts_log,cpi_errors)
 
 ### 1.7.2 Potential Automatically chosen models: Errors
 # The "forecast" command is overrun when the "Forecast" package is loaded so we must use auto arima.
-auto_model <- auto.arima(Prices_ts_log)
-arma_params <- auto_model$arma # follows this structure (p,q,P,Q,m,d,D) not (p,d,q,P,D,Q,m)
-arma_order <- c(arma_params[1],arma_params[6],arma_params[2])
-seasonal_order <- c(arma_params[3],arma_params[7],arma_params[4])
-auto_forecast_errors <- expanding_errors(Prices_ts_log,arma_order,seasonal_order)*100
-MSE_cpi_auto <- mean(auto_forecast_errors^2)
-RMSE_cpi_auto <- sqrt(mean(auto_forecast_errors^2))
-MAE_cpi_auto <- mean(abs(auto_forecast_errors))
-MAPE_cpi_auto <- MAPE_comp(Prices_ts_log,auto_forecast_errors)
+auto_model_cpi <- auto.arima(Prices_ts)
+arma_params_cpi <- auto_model_cpi$arma # follows this structure (p,q,P,Q,m,d,D) not (p,d,q,P,D,Q,m)
+arma_order_cpi <- c(arma_params_cpi[1],arma_params_cpi[6],arma_params_cpi[2])
+seasonal_order_cpi <- c(arma_params_cpi[3],arma_params_cpi[7],arma_params_cpi[4])
+auto_forecast_errors_cpi <- expanding_errors(Prices_ts_log,arma_order_cpi,seasonal_order_cpi)*100
+MSE_cpi_auto <- mean(auto_forecast_errors_cpi^2)
+RMSE_cpi_auto <- sqrt(mean(auto_forecast_errors_cpi^2))
+MAE_cpi_auto <- mean(abs(auto_forecast_errors_cpi))
+MAPE_cpi_auto <- MAPE_comp(Prices_ts_log,auto_forecast_errors_cpi)
+
+auto_model_inf <- auto.arima(Prices_ts_dif_log)
+arma_params_inf <- auto_model_inf$arma # follows this structure (p,q,P,Q,m,d,D) not (p,d,q,P,D,Q,m)
+arma_order_inf <- c(arma_params_inf[1],arma_params_inf[6],arma_params_inf[2])
+seasonal_order_inf <- c(arma_params_inf[3],arma_params_inf[7],arma_params_inf[4])
+auto_forecast_errors_inf <- expanding_errors(Prices_ts_dif_log,arma_order_inf,seasonal_order_inf)
+MSE_inf_auto <- mean(auto_forecast_errors_inf^2)
+RMSE_inf_auto <- sqrt(mean(auto_forecast_errors_inf^2))
+MAE_inf_auto <- mean(abs(auto_forecast_errors_inf))
+MAPE_inf_auto <- MAPE_comp(Prices_ts_dif_log,auto_forecast_errors_inf)
 
 errors <- matrix(round(c(MSE_inflation, RMSE_inflation, MAE_inflation, MAPE_inflation,
+                         MSE_inf_auto, RMSE_inf_auto, MAE_inf_auto, MAPE_inf_auto,
                          MSE_cpi, RMSE_cpi, MAE_cpi, MAPE_cpi,
-                         MSE_cpi_auto, RMSE_cpi_auto, MAE_cpi_auto, MAPE_cpi_auto),2), nrow=4, ncol=3, byrow=FALSE)
+                         MSE_cpi_auto, RMSE_cpi_auto, MAE_cpi_auto, MAPE_cpi_auto),2), 
+                         nrow=4, ncol=4, byrow=FALSE)
 df_errors <- as.data.frame(errors)
-colnames(df_errors) <- c('Inflation','CPI 2022-2025 (*100)','Auto-ARIMA (*100)')
+colnames(df_errors) <- c('Inflation','Auto-ARIMA Inflation','CPI 2022-2025 (*100)','Auto-ARIMA CPI (*100)')
 df_errors$Error <- c('MSE','RMSE','MAE','MAPE')
 df_errors <- df_errors %>% relocate(last_col(), .before=1)
 pander(df_errors, caption='Errors of Different predictions')
 
 ### 1.7.2 Testing for Equivalent models (Diebold-Mariano)
-pander(dm.test(cpi_errors,auto_forecast_errors,h=1,power=1))
-pander(dm.test(cpi_errors,auto_forecast_errors,h=1,power=2))
+# Testing automatic model vs our CPI forecasting model
+pander(dm.test(cpi_errors,auto_forecast_errors_cpi,h=1,power=1))
+pander(dm.test(cpi_errors,auto_forecast_errors_cpi,h=1,power=2))
+
+# Testing automatic model vs our inflation forecasting model
+pander(dm.test(inflation_errors,auto_forecast_errors_inf,h=1,power=1))
+pander(dm.test(inflation_errors,auto_forecast_errors_inf,h=1,power=2))
 
 ### 1.7.3 Conclusion:
 # Inflation: Our RMSE shows that, on average our predicion is 0.41 pp off every time, that does not seem too large given the 
@@ -487,130 +441,4 @@ pander(dm.test(cpi_errors,auto_forecast_errors,h=1,power=2))
 # CPI: Our RMSE Shows that, on average our model and the automatic one are both off by 0.041 units.
 # The autogenerated model delivers slightly larger absolute Errors than our manual set SARIMA, despite, both predictions and models 
 # are statistically equivalent regardless of the use of absolute or squared errors.
-
-#   2) Multivariate Serie Analysis
-par(mfrow=c(3,1))
-par(mar=c(3,4,2,1), oma=c(1,1,1,0))
-
-##  2.1 Visualization
-plot(Prices_ts,col='blue',lty=1,lwd=3,xlab='',ylab='CPI Index (Bae 2015)',
-     main="Consumer Price Index (Base 2015) monthly Evolution in the EU Area 2000-2025")
-grid()
-plot(Rates_ts,col='darkgreen',lty=1,lwd=3,xlab='',ylab='Percentage Points (%)',
-     main="Interbank Rates monthly Evolution in the EU Area 2000-2025 (%)")
-grid()
-plot(Unemployment_ts,col='orange',lty=1,lwd=3,xlab='',ylab='Percentage Points (%)',
-     main="Unemployment Rate monthly Evolution in the EU Area 2000-2025 (%)")
-grid()
-par(mfrow=c(1,1))
-
-##  2.2 Testing 
-### 2.2.1 Series for unit root (ADF)
-test_rates <- CADFtest(Rates_ts, type='trend', criterion='BIC', max.lag.y=round(sqrt(length(Rates_ts))))
-pander_display_test(test_rates)
-test_rates <- CADFtest(Rates_ts, type='drift', criterion='BIC', max.lag.y=round(sqrt(length(Rates_ts))))
-pander_display_test(test_rates)
-# It seems our series has no drift or trend, furthermore, the ADF rejects H0 of unit root when we do not include drift or trend.
-# We are then dealing with no unit root, a series without a trend with a mean very close to 0 or even 0. We clearly
-# see (in the plots) that we have anon-zero mean thus we won't test ADF with no drift or trend. We conclude that our 
-# serie is non-stationary with a non-zero mean.
-
-test_unemployment <- CADFtest(Unemployment_ts, type='trend', criterion='BIC', max.lag.y=round(sqrt(length(Unemployment_ts))))
-pander_display_test(test_unemployment)
-test_unemployment <- CADFtest(Unemployment_ts, type='drift', criterion='BIC', max.lag.y=round(sqrt(length(Unemployment_ts))))
-pander_display_test(test_unemployment)
-# We cannot reject H0 with a trend, and despite that intercept is always significant (with and without trend) trend is marginally significant
-# when included at a 10% level, so either we have a random walk with a non-0 mean or a stochastic trendWe have a unit root around a non-zero mean.
-
-### 2.2.2 Seasonality (We will just regress our TS against Monthly dummies to get rid of the seasonality).
-par(mfrow=c(3,1))
-monthplot(Prices_ts_log, main='Log CPI Seasonality', xlab='', ylab='', label=month.abb)
-monthplot(Unemployment_ts, main='Unemployment Rate Seasonality', xlab='', ylab='', label=month.abb)
-monthplot(Rates_ts, main='Interest Rates Seasonality', xlab='', ylab='', label=month.abb)
-par(mfrow=c(1,1))
-
-Prices_ts_log <- deseason(Prices_ts_log)
-Unemployment_ts <- deseason(Unemployment_ts)
-Rates_ts <- deseason(Rates_ts)
-
-##  2.3 Cointegration
-par(mfrow=c(2,2))
-par(mar=c(3,4,2,1), oma=c(0,1,1,0))
-
-logData <- cbind(Prices_ts_log, Unemployment_ts, Rates_ts)
-colnames(logData) <- c('Log Prices','Unemployment','Int. Rates')
-
-### 2.3.1 Checking order of the vector
-auto_VAR <- VARselect(logData ,lag.max=10, type='const')
-auto_VAR_order <- auto_VAR$selection['SC(n)']
-
-
-### 2.3.2 Checking for Cointegrating equation based on proposed order (max 2 equations)
-trace_test<-ca.jo(logData, type="trace",K=auto_VAR_order,ecdet="const",spec="transitory")
-summary(trace_test)
-maxeigen_test<-ca.jo(logData,type="eigen",K=auto_VAR_order,ecdet="const",spec="transitory")
-summary(maxeigen_test)
-# We find that there is one cointegrating equation.
-
-##  2.4 Modelization
-# Vector Error Correcting Model
-VECM<-cajorls(trace_test,r=2)
-VECM_res_log_prices <- ts(VECM$rlm$residuals[,1], start=c(2000,1), frequency=12)
-residual_plots(VECM_res_log_prices,'VECM logPrices', lag=48)
-VECM_res_log_prices <- ts(VECM$rlm$residuals[,2], start=c(2000,1), frequency=12)
-residual_plots(VECM_res_log_prices,'VECM Unemployment', lag=48)
-VECM_res_log_prices <- ts(VECM$rlm$residuals[,3], start=c(2000,1), frequency=12)
-residual_plots(VECM_res_log_prices,'VECM Int Rates', lag=48)
-
-##  2.5 Forecast
-par(mfrow=c(3,1))
-par(mar=c(3,4,2,1), oma=c(1,1,1,1))
-
-train_index <- round(nrow(logData))*0.85
-train_series <- window(logData, end=c(2021,10))
-test_series <- window(logData, start=c(2021,11))
-
-auto_VAR_train <- VARselect(train_series ,lag.max=10, type='const')
-auto_VAR_order_train <- auto_VAR_train$selection['SC(n)']
-trace_test_train <- ca.jo(train_series, type="trace",K=auto_VAR_order_train,ecdet="const",spec="transitory")
-fit_var <- vec2var(trace_test_train,r=2)
-myforecast <- predict(fit_var,n.ahead=nrow(test_series))
-names(myforecast$fcst) <- c('Log Prices','Unemployment','Int. Rates')
-
-for (varname in names(myforecast$fcst)){
-  actual <- test_series[,varname]
-  serie <- myforecast$fcst[[varname]]
-  prediction <- ts(serie[,1], frequency=12, start=c(2021,11))
-  upper <- ts(serie[,2], frequency=12, start=c(2021,11))
-  lower <- ts(serie[,3], frequency=12, start=c(2021,11))
-  titulo <- paste(varname,'Prediction from November 2021 to August 2025')
-  plot.ts(actual, ylab=varname, xlab='', main=titulo, lty=1,lwd=2,col='blue',
-          ylim=range(actual,lower, upper, prediction, na.rm = TRUE))
-  lines(prediction,lty=1, lwd=2, col='red')
-  lines(upper,lty=2, lwd=2, col='orange')
-  lines(lower,lty=2, lwd=2, col='orange')
-  legend('topleft',legend = c('Actual','Prediction','Bounds'), lty=c(1,1,2), lwd=c(2,2,2),col=c('blue','red','orange'))
-  grid()
-}
-par(mfrow=c(1,1))
-
-##  2.6 Prediction validation
-VECM_errors <- expanding_errors_multi(logData,VAR_order=2,coint_equations=2,horizon=1, plot=TRUE)
-MSE_VECM <- round(colMeans(VECM_errors^2),3)
-RMSE_VECM <- round(sqrt(colMeans(VECM_errors^2)),3)
-MAE_VECM <- round(colMeans(abs(VECM_errors)),3)
-MAPE_VECM <- MAPE_comp(logData,VECM_errors, multi=TRUE)
-Error <- c('MSE','RMSE','MAE','MAPE')
-df_VECM_errors <- as.data.frame(cbind(Error,rbind(MSE_VECM,RMSE_VECM,MAE_VECM,MAPE_VECM)))
-rownames(df_VECM_errors) <- NULL
-pander(df_VECM_errors, caption='Errors of Different series in VECM')
-
-### 2.7 Testing for Equivalent models (Diebold-Mariano) for Log Prices: Univariate vs Multivariate Errors
-Multivariate_Errors <- VECM_errors[,'Log Prices']
-pander(dm.test(Multivariate_Errors,cpi_errors,h=1,power=1))
-pander(dm.test(Multivariate_Errors,cpi_errors,h=1,power=2))
-
-# The univariate model delivers larger Errors than our multivariate VECM, furthermore, after testing, the errors are statistically significant.
-
-##  2.8 Impulse Response Functions
-irf_var<-irf(fit_var,ortho=FALSE,boot=TRUE)
+# In both cases (Inflation and CPI) our model is not significantly different than the automatic one.
