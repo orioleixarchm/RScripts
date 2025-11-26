@@ -29,7 +29,6 @@ pander_display_test <- function(test){
   coeff_table$Estimator <- rownames(coeff_table)
   coeff_table <- coeff_table %>% relocate(last_col(), .before=1)
   rownames(coeff_table) <- NULL
-  print(paste0('P-value = '),test$p.value)
   pander(test)
   pander(coeff_table, caption="Test's Coefficients Significance")
 }
