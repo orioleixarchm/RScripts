@@ -250,10 +250,11 @@ pander_display_test(test_prices_dif)
 
 ##  1.3 Checking for seasonality
 par(mfrow=c(2,1))
-monthplot(Prices_ts_dif_log,main='Inflation Seasonality', xlab='', ylab='', labels=month.abb)
 monthplot(Prices_ts,main='CPI Seasonality', xlab='', ylab='', labels=month.abb)
+monthplot(Prices_ts_dif_log,main='Inflation Seasonality', xlab='', ylab='', labels=month.abb)
 # Inflation Seasonality is present indeed, but stable, it does not drift (stable mean "horizontal bar" and recurring pattern)
 # CPI requires seasonal differentiating.
+# BUT We will work with Inflation, not CPI.
 par(mfrow=c(1,1))
 
 ##  1.4 AR-MA Orders
@@ -394,6 +395,13 @@ legend("topright",legend=c('Forecasted','Bounds','Series mean'),
        col=c('blue','orange','red'), lwd=2, lty=c(1,1,2), cex=0.7)
 grid()
 par(mfrow=c(1,1))
+
+################ WARNING ################
+# We did not conduct our analysis using the original de-seasonalised CPI, but the log diff of the non-deseasonalised CPI.
+# Based on purely economic knowledge, we know that our inflation is nothing more than growth rate of CPI, that is, its derivative , 
+# therefore, we can try to predict CPI using the exact same model used for inflation but adjusting the Integration order AND; 
+# based on the seasonality plot, the seasonal Integration order that is our SARIMA(1,0,1)(2,0,1) forecasts inflation and 
+# SARIMA(1,1,1)(2,1,1) forecasts CPI, removing its seasonality.
 
 #### 1.6.4 CPI using SARIMA
 par(mfrow=c(2,1))
