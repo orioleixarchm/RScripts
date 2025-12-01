@@ -117,7 +117,7 @@ expanding_errors <- function(serie, arma_order, seasonal_order,horizon=1, plot_s
 ##  0.3 Getting raw data
 # Harmonized Index of Consumer Prices (FRED via EUROSTAT): All Items for the Euro Area 19
 # 3-Month or 90-Day Rates and Yields (FRED via OECD): Interbank Rates for the Euro Area 19
-# Monthly Unemployment in the EU area (20 countries)
+# Monthly Unemployment in the EU area (19 countries)
 getSymbols(c("CP0000EZ19M086NEST","IR3TIB01EZM156N"),src='FRED')
 path  <-  "C:/Users/User/OneDrive/UNI/MASTER/Adv Time Series Analysis/Assignment/"
 path <- paste0(path,"Unemployment_monthly_2000_2025.xlsx")
@@ -187,11 +187,12 @@ pander_display_test(test_prices_dif)
 
 ##  1.3 Checking for seasonality
 par(mfrow=c(2,1))
-monthplot(Prices_ts,main='CPI Seasonality', xlab='', ylab='', labels=month.abb)
+monthplot(log(Prices_ts),main='CPI Seasonality', xlab='', ylab='', labels=month.abb)
 monthplot(Prices_ts_dif_log,main='Inflation Seasonality', xlab='', ylab='', labels=month.abb)
-# Inflation Seasonality is present indeed, but stable, it does not drift (stable mean "horizontal bar" and recurring pattern)
-# CPI requires seasonal differentiating.
-# BUT We will work with Inflation, not CPI.
+# Inflation Seasonality is present indeed, but stable, deterministic seasonality probably to be adressed with seasonal AR/MA.
+# ACF and PACF to confirm if there is persistent spikes at fixed interval (seasonal diff maybe required).
+# CPI shows a trend but not real seasonality.
+# We will work with Inflation, not CPI.
 par(mfrow=c(1,1))
 
 ##  1.4 AR-MA Orders
@@ -211,12 +212,20 @@ pacf(Prices_ts_dif_log, main='Partial Autocorrelogram of Stationary Price Variat
      ylab='',xaxt='n',xlab='Lag (Months)',lag.max=48)
 axis(1, at=seq(0,48, by=6)/12, labels=seq(0,48, by=6))
 
+### 1.4.3 Checking the MA and AR order of De-seasonalized ts
+par(mfrow=c(2,1))
+Prices_ts_dif_log_seas = diff(Prices_ts_dif_log, lag=12)
+acf(Prices_ts_dif_log_seas, main='Autocorrelation of De-seasonalised Inflation',
+    ylab='', xlab='Lag (Months)', xaxt='n')
+axis(1, at=seq(0,48, by=6)/12, labels=seq(0,48,by=6))
+pacf(Prices_ts_dif_log_seas, main='Partial Autocorrelation of De-seasonalised Inflation',
+     ylab='', xlab='Lag (Months)', xaxt='n')
+axis(1, at=seq(0,48, by=6)/12, labels=seq(0,48,by=6))
+par(mfrow=c(1,1))
+
 ##  1.5 Modelization
 # PACF and ACF suggest AR order 1 and MA order 1, we will also check different orders of ARMA models; 
-# there seems to be correlation at seasonal frequency (6 or 12)
-# Models then Ljung-Box test on residuals (residuals correlated)?? H0: Residuals = White noise)
-# We must not include a mean despite having found that the series has a drift (non-zero mean) as seasonal 
-# differentiation removes the mean.
+# there seems to be correlation at seasonal frequency (6 or 12), removed after seasonal diff.
 
 ### 1.5.1 Models
 # MA(1) and Ljung-Box test on residuals (residuals correlated?? H0: Residuals = White noise)
@@ -258,30 +267,29 @@ residual_plots(sarma_11_arma$residuals,'SARMA(1,1)(1,1)[12]')
 # The best model so far considering only AIC criteria.
 
 # SARMA(1,1) (ARMA + ARIMA (2,0,1) Seasonality 12 periods) and Ljung-Box test on residuals (residuals correlated?? H0: Residuals = White noise)
-sarma_11_arma <- arima(Prices_ts_dif_log, order=c(1,0,1), seasonal=list(order=c(2,0,1), period=12))
+sarma_11_arma <- arima(Prices_ts_dif_log, order=c(1,0,1), seasonal=list(order=c(2,1,1), period=12))
 pander(sarma_11_arma)
 pander(data.frame('BIC' = BIC(sarma_11_arma)))
-residual_plots(sarma_11_arma$residuals,'SARMA(1,1)(2,0,1)[12]')
-# Slight increase in AIC and reduction in Q statistic, thus this is the best model so far WITHOUT taking into consideration
-# its increased complexity. Still, taking into account complexity, we can see that BIC delivers a higher value than its simpler predecessor 111 vs 105.
+residual_plots(sarma_11_arma$residuals,'SARMA(1,1)(2,1,1)[12]')
+# Resuction in both BIC and Q-statistic, thus this is the best model so far WITHOUT taking into consideration
+# its increased complexity. Still, taking into account complexity, we can see that BIC delivers lower value than its simpler predecessor 97.54 vs 105.
 
 # SARMA(1,1) (ARMA + ARIMA (1,0,2) Seasonality 12 periods) and Ljung-Box test on residuals (residuals correlated?? H0: Residuals = White noise)
-sarma_11_arma <- arima(Prices_ts_dif_log, order=c(1,0,1), seasonal=list(order=c(1,0,2), period=12, include.mean=FALSE))
+sarma_11_arma <- arima(Prices_ts_dif_log, order=c(1,0,1), seasonal=list(order=c(1,1,2), period=12, include.mean=FALSE))
 pander(sarma_11_arma)
 pander(data.frame('BIC' = BIC(sarma_11_arma)))
-residual_plots(sarma_11_arma$residuals,'SARMA(1,1)(1,0,2)[12]')
-# Further Updating our seasonal orders delivers a worse Q statistic, and worse AIC.
+residual_plots(sarma_11_arma$residuals,'SARMA(1,1)(1,1,2)[12]')
+# Further Updating our seasonal orders delivers a worse Q statistic, and worse BIC.
 
 ### 1.5.2 Conclusion
-# Relative to MA(1) and ARMA(1,1), the SARIMA(1,0,1)(1,0,1)[12] specification yields a large reduction in residual autocorrelation. The Ljung–Box
-# statistics drop from Q(48)=406 to 76.97 for the MA(1), and from Q(48)=410 to 76.97 for the ARMA(1,1), i.e., a substantial fall in the
+# Relative to MA(1) and ARMA(1,1), the SARIMA(1,0,1)(2,1,1)[12] specification yields a large reduction in residual autocorrelation. The Ljung–Box
+# statistics drop from Q(48)=406 to 69.91 for the MA(1), and from Q(48)=410 to 69.91 for the ARMA(1,1), i.e., a substantial fall in the
 # (weighted) sum of squared residual autocorrelations up to 48 months. Residual ACFs are largely within bounds, indicating the seasonal dynamics
 # are now well captured although not completely, due th strictness of the test at 48 lags, we formally reject residuals being white noisebut the plots 
 # may suggest otherwise. The AIC of this model is the lowest of all the ones tested.
-# Despite those good results the SARIMA(1,0,1)(2,0,1)[12] presents a lower Q statistic at the expense of a higher BiC.
 
 ##  1.6 Forecast
-par(mfrow=c(3,1))
+par(mfrow=c(2,1))
 par(mar=c(3,4,2,1), oma=c(1,1,1,1))
 
 ### 1.6.1 Inflation SARMA(1,1)
@@ -290,7 +298,7 @@ date_train_index <- as.yearmon(time(Prices_ts_dif_log)[train_index])
 train_Inflation <- window(Prices_ts_dif_log, end=c(2021,10))
 test_Inflation <- window(Prices_ts_dif_log, start=c(2021,11))
 
-forecast_model <- arima(train_Inflation,order=c(1,0,1), seasonal=list(order=c(2,0,1),
+forecast_model <- arima(train_Inflation,order=c(1,0,1), seasonal=list(order=c(2,1,1),
                         period=12, include.mean=FALSE))
 forecast <- predict(forecast_model,n.ahead=length(test_Inflation))
 inflation_pred <- forecast$pred
@@ -306,17 +314,8 @@ legend("topright",legend=c('Actual','Forecasted','Confidence Bounds'),
        col=c('blue','red','orange'), lwd=2, lty=c(1,1,3), cex=0.7)
 grid()
 
-### 1.6.2 Inflation Confidence Interval from Forecast Package
-forecast_illegal <- forecast(forecast_model,h=length(test_Inflation))
-prev_periods=12
-plot(forecast_illegal, prev_periods,main='SARIMA(1,0,1)(1,0,1) Inflation + forecast from 2020-11 to 2025',
-     ylab='Infation (PCt Change in CPI)', ylim=c(-1,2.5))
-lines(window(Prices_ts_dif_log,start=c(2020,11)), col="black", lwd=2)
-legend("topright", legend=c("Actual",'Forecast'), col=c('black','royalblue'), lwd=2, lty=c(1,1,3), cex=0.7)
-grid()
-
-### 1.6.3 Inflation Convergence to constant
-forecast_model_conv <- arima(Prices_ts_dif_log,order=c(1,0,1), seasonal=list(order=c(2,0,1),
+### 1.6.2 Inflation Convergence to constant
+forecast_model_conv <- arima(Prices_ts_dif_log,order=c(1,0,1), seasonal=list(order=c(2,1,1),
                                                             period=12, include.mean=FALSE))
 forecast_conv <- predict(forecast_model_conv,n.ahead=500)
 inflation_pred_conv <- forecast_conv$pred
@@ -333,16 +332,7 @@ legend("topright",legend=c('Forecasted','Bounds','Series mean'),
 grid()
 par(mfrow=c(1,1))
 
-################ WARNING ################
-# We did not conduct our analysis using the original de-seasonalised CPI, but the log diff of the non-deseasonalised CPI.
-# Based on purely economic knowledge, we know that our inflation is nothing more than growth rate of CPI, that is, its derivative , 
-# therefore, we can try to predict CPI using the exact same model used for inflation but adjusting the Integration order AND; 
-# based on the seasonality plot, the seasonal Integration order that is our SARIMA(1,0,1)(2,0,1) forecasts inflation and 
-# SARIMA(1,1,1)(2,1,1) forecasts CPI, removing its seasonality.
-
 #### 1.6.4 CPI using SARIMA
-par(mfrow=c(2,1))
-par(mar=c(3,4,2,1), oma=c(1,1,1,0))
 train_index <- round(length(Prices_ts_log)*0.85)
 date_train_index <- as.yearmon(time(Prices_ts_log)[train_index])
 train_Prices <- window(Prices_ts_log, end=c(2021,10))
@@ -364,23 +354,9 @@ legend("bottomright",legend=c('Actual','Forecasted','Bounds'),
        col=c('blue','red','orange'), lwd=c(2,2,2), lty=c(1,1,3), cex=0.7)
 grid()
 
-### 1.6.5 CPI Confidence Interval from Forecast Package
-forecast_illegal <- forecast(forecast_model,h=length(test_Prices))
-forecast_illegal$mean <- exp(forecast_illegal$mean)
-forecast_illegal$lower <- exp(forecast_illegal$lower)
-forecast_illegal$upper <- exp(forecast_illegal$upper)
-forecast_illegal$x <- exp(forecast_illegal$x)
-prev_periods=12
-plot(forecast_illegal, prev_periods, main='CPI and SARIMA-Forecasted Log CPI C.Intervals from November 2020 to August 2025', 
-     ylim=c(105,130), ylab='Base 2015 CPI')
-lines(window(Prices_ts,start=c(2020,11)), col="black", lwd=2)
-legend("bottomright",legend=c("Actual","Forecast"), col=c('black','royalblue'), lwd=c(2,2), lty=c(1,1), cex=0.7)
-grid()
-par(mfrow=c(1,1))
-
 ##  1.7 Prediction validation
 ### 1.7.1 Estimated models: Errors
-inflation_errors <- expanding_errors(Prices_ts_dif_log,c(1,0,1), c(2,0,1), plot_serie_name='Inflation (%)')
+inflation_errors <- expanding_errors(Prices_ts_dif_log,c(1,0,1), c(2,1,1), plot_serie_name='Inflation (%)')
 MSE_inflation <- mean(inflation_errors^2)
 RMSE_inflation <- sqrt(mean(inflation_errors^2))
 MAE_inflation <- mean(abs(inflation_errors))
@@ -442,4 +418,5 @@ pander(dm.test(inflation_errors,auto_forecast_errors_inf,h=1,power=2))
 # The autogenerated model delivers slightly larger absolute Errors than our manual set SARIMA, despite, both predictions and models 
 # are statistically equivalent regardless of the use of absolute or squared errors.
 # In both cases (Inflation and CPI) our model is not significantly different than the automatic one.
+
 
